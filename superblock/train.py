@@ -6,7 +6,7 @@ import random
 from .buffer import ReplayBuffer, Transition
 from .env import Action, SuperblockEnv
 from .models import ForwardModel
-from .monitor import checkpoint_exists, load_checkpoint, save_checkpoint, write_dashboard, write_history_csv
+from .monitor import checkpoint_exists, load_checkpoint, save_checkpoint, write_dashboard
 from .utils import GRID_MAX, exp, mse, set_seed
 
 
@@ -132,7 +132,6 @@ def run(args: argparse.Namespace) -> None:
     try:
         for day_idx in range(start_day + 1, args.max_days + 1):
             invalid_count = 0
-            visible_hits = 0
 
             state_t, img_t = env.reset()
             for _ in range(args.steps_per_day):
@@ -140,8 +139,6 @@ def run(args: argparse.Namespace) -> None:
                 state_tp1, img_tp1, invalid = env.step(action)
                 if invalid:
                     invalid_count += 1
-                if any(px > 0.0 for row in img_tp1 for px in row):
-                    visible_hits += 1
                 buffer.add(
                     Transition(
                         state_t=state_t.copy(),
@@ -177,7 +174,6 @@ def run(args: argparse.Namespace) -> None:
                 "exact_acc": exact_acc,
                 "near_acc": near_acc,
                 "score": score,
-                "visible_hits": float(visible_hits),
             }
             history.append(row)
 
@@ -188,7 +184,6 @@ def run(args: argparse.Namespace) -> None:
             )
 
             write_dashboard(args.dashboard_path, history, visible_cells)
-            write_history_csv(args.metrics_csv_path, history)
             if day_idx % args.save_every_days == 0:
                 save_checkpoint(
                     args.checkpoint_path,
@@ -216,10 +211,8 @@ def run(args: argparse.Namespace) -> None:
             visible_cells=visible_cells,
         )
         write_dashboard(args.dashboard_path, history, visible_cells)
-        write_history_csv(args.metrics_csv_path, history)
         print(f"Checkpoint saved to {args.checkpoint_path}")
         print(f"Dashboard updated at {args.dashboard_path}")
-        print(f"Metrics CSV updated at {args.metrics_csv_path}")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -239,7 +232,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--checkpoint-path", type=str, default="artifacts/train.ckpt")
     parser.add_argument("--dashboard-path", type=str, default="artifacts/dashboard.html")
     parser.add_argument("--save-every-days", type=int, default=1)
-    parser.add_argument("--metrics-csv-path", type=str, default="artifacts/metrics.csv")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--daytime-only", action="store_true")
     parser.add_argument(
