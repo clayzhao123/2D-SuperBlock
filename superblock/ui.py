@@ -35,29 +35,71 @@ def center_of(points: list[tuple[int, int]]) -> tuple[float, float]:
 
 def run_ui() -> None:
     import tkinter as tk
+    import tkinter.font as tkfont
     from tkinter import messagebox
 
     class App:
         def __init__(self, root: tk.Tk) -> None:
             self.root = root
             self.root.title("Superblock v1.2 Pixel Monitor")
-            self.root.configure(bg="#111")
+            self.root.configure(bg="#0A0A0A")
+
+            self.colors = {
+                "bg": "#0A0A0A",
+                "header": "#0D0D0D",
+                "surface": "#111111",
+                "surface_border": "#1E1E1E",
+                "panel_border": "#2A2A2A",
+                "primary": "#FF6633",
+                "secondary": "#FF9900",
+                "text": "#FFFFFF",
+                "text_secondary": "#888888",
+                "grid_line": "#1A1A1A",
+                "grid_bg": "#080808",
+                "input_bg": "#0D0D0D",
+                "input_border": "#333333",
+            }
+
+            self.pixel_font = self._pick_font(("Press Start 2P", "Courier New", "Courier"), size=8)
+            self.pixel_title_font = self._pick_font(("Press Start 2P", "Courier New", "Courier"), size=9)
+            self.header_font = self._pick_font(("Press Start 2P", "Courier New", "Courier"), size=10)
+            self.mono_font = self._pick_font(("JetBrains Mono", "Courier New", "Courier"), size=11)
+            self.metric_font = self._pick_font(("JetBrains Mono", "Courier New", "Courier"), size=12)
 
             self.cell = 12
             self.grid_cells = 41
             self.max_traj_days = 5
 
+            header = tk.Frame(root, bg=self.colors["header"], height=40, highlightthickness=1, highlightbackground=self.colors["surface_border"])
+            header.grid(row=0, column=0, columnspan=2, sticky="ew")
+            header.grid_propagate(False)
+            tk.Label(
+                header,
+                text="SUPERBLOCK SIMULATION",
+                bg=self.colors["header"],
+                fg=self.colors["text"],
+                font=self.header_font,
+            ).grid(row=0, column=0, padx=12, pady=12, sticky="w")
+
             self.env_canvas = tk.Canvas(
                 root,
                 width=self.grid_cells * self.cell,
                 height=self.grid_cells * self.cell,
-                bg="#fff",
-                highlightthickness=0,
+                bg=self.colors["grid_bg"],
+                highlightthickness=1,
+                highlightbackground=self.colors["surface_border"],
             )
-            self.env_canvas.grid(row=0, column=0, padx=12, pady=12, sticky="n")
+            self.env_canvas.grid(row=1, column=0, padx=12, pady=12, sticky="n")
 
-            panel = tk.Frame(root, bg="#111")
-            panel.grid(row=0, column=1, padx=10, pady=10, sticky="n")
+            panel = tk.Frame(
+                root,
+                bg=self.colors["surface"],
+                padx=16,
+                pady=16,
+                highlightthickness=1,
+                highlightbackground=self.colors["panel_border"],
+            )
+            panel.grid(row=1, column=1, padx=10, pady=12, sticky="n")
 
             self.visible_cells_var = tk.StringVar(value="19:19")
             self.superblock_count_var = tk.StringVar(value="1")
@@ -67,35 +109,54 @@ def run_ui() -> None:
 
             self._pixel_label(panel, "调整面板", 0, 0, bold=True)
             self._pixel_label(panel, "可视单元格坐标", 1, 0)
-            tk.Entry(panel, textvariable=self.visible_cells_var, width=28).grid(row=1, column=1, pady=2)
+            self._styled_entry(panel, self.visible_cells_var, 1)
             self._pixel_label(panel, "superblock数量(v1.3预留)", 2, 0)
-            tk.Entry(panel, textvariable=self.superblock_count_var, width=28).grid(row=2, column=1, pady=2)
+            self._styled_entry(panel, self.superblock_count_var, 2)
             self._pixel_label(panel, "superblock初始位置(4点)", 3, 0)
-            tk.Entry(panel, textvariable=self.init_points_var, width=28).grid(row=3, column=1, pady=2)
+            self._styled_entry(panel, self.init_points_var, 3)
             self._pixel_label(panel, "训练天数", 4, 0)
-            tk.Entry(panel, textvariable=self.days_var, width=28).grid(row=4, column=1, pady=2)
+            self._styled_entry(panel, self.days_var, 4)
             self._pixel_label(panel, "每天采样步数", 5, 0)
-            tk.Entry(panel, textvariable=self.steps_var, width=28).grid(row=5, column=1, pady=2)
+            self._styled_entry(panel, self.steps_var, 5)
 
             self.run_btn = tk.Button(
                 panel,
                 text="RUN",
                 command=self.on_run,
-                bg="#000",
-                fg="#fff",
-                activebackground="#333",
-                activeforeground="#fff",
+                bg=self.colors["primary"],
+                fg="#000000",
+                activebackground=self.colors["secondary"],
+                activeforeground="#000000",
                 width=16,
                 height=2,
+                relief="flat",
+                bd=0,
+                font=self.pixel_font,
+                cursor="hand2",
             )
             self.run_btn.grid(row=6, column=0, columnspan=2, pady=10)
+            self.run_btn.bind("<Enter>", lambda _e: self.run_btn.configure(bg=self.colors["secondary"]))
+            self.run_btn.bind("<Leave>", lambda _e: self.run_btn.configure(bg=self.colors["primary"]))
 
             self._pixel_label(panel, "训练指标", 7, 0, bold=True)
             self.metrics_var = tk.StringVar(value="day=0 | score=0.000 | mse=0.000000")
-            tk.Label(panel, textvariable=self.metrics_var, bg="#111", fg="#fff").grid(row=8, column=0, columnspan=2, sticky="w")
+            tk.Label(
+                panel,
+                textvariable=self.metrics_var,
+                bg=self.colors["surface"],
+                fg=self.colors["secondary"],
+                font=self.metric_font,
+            ).grid(row=8, column=0, columnspan=2, sticky="w")
 
             self._pixel_label(panel, "信任图（可视单元格命中次数）", 9, 0, bold=True)
-            self.trust_canvas = tk.Canvas(panel, width=360, height=180, bg="#fff", highlightthickness=0)
+            self.trust_canvas = tk.Canvas(
+                panel,
+                width=360,
+                height=180,
+                bg=self.colors["grid_bg"],
+                highlightthickness=1,
+                highlightbackground=self.colors["surface_border"],
+            )
             self.trust_canvas.grid(row=10, column=0, columnspan=2, pady=6)
 
             self.history: list[dict[str, float]] = []
@@ -103,9 +164,37 @@ def run_ui() -> None:
 
             self.draw_base_grid([(19, 19)], [(2, 2), (3, 2), (3, 3), (2, 3)])
 
+        def _pick_font(self, candidates: tuple[str, ...], size: int, weight: str = "normal") -> tuple[str, int, str]:
+            available = set(tkfont.families())
+            family = next((name for name in candidates if name in available), candidates[-1])
+            return (family, size, weight)
+
+        def _styled_entry(self, parent: tk.Widget, var: tk.StringVar, row: int) -> tk.Entry:
+            entry = tk.Entry(
+                parent,
+                textvariable=var,
+                width=28,
+                bg=self.colors["input_bg"],
+                fg=self.colors["secondary"],
+                insertbackground=self.colors["secondary"],
+                relief="flat",
+                highlightthickness=1,
+                highlightbackground=self.colors["input_border"],
+                highlightcolor=self.colors["primary"],
+                bd=0,
+                font=self.mono_font,
+            )
+            entry.grid(row=row, column=1, pady=2)
+            return entry
+
         def _pixel_label(self, parent: tk.Widget, text: str, row: int, col: int, *, bold: bool = False) -> None:
-            font = ("Courier", 10, "bold" if bold else "normal")
-            tk.Label(parent, text=text, bg="#111", fg="#fff", font=font).grid(row=row, column=col, sticky="w", pady=2)
+            tk.Label(
+                parent,
+                text=text.upper(),
+                bg=self.colors["surface"],
+                fg=self.colors["primary"] if bold else self.colors["text_secondary"],
+                font=self.pixel_title_font if bold else self.pixel_font,
+            ).grid(row=row, column=col, sticky="w", pady=2)
 
         def config_from_ui(self) -> UIConfig:
             visible_cells = parse_visible_cells(self.visible_cells_var.get())
@@ -127,23 +216,28 @@ def run_ui() -> None:
             self.env_canvas.delete("all")
             for x in range(self.grid_cells):
                 for y in range(self.grid_cells):
-                    color = "#fff"
+                    color = self.colors["grid_bg"]
                     if (x, y) in visible_cells:
-                        color = "#ddd"
+                        color = self.colors["grid_line"]
                     self.draw_cell(x, y, color)
             for x, y in points:
-                self.draw_cell(x, y, "#000")
+                self.draw_cell(x, y, self.colors["primary"])
+            self.draw_scanlines(self.env_canvas, self.grid_cells * self.cell, self.grid_cells * self.cell)
 
         def draw_cell(self, x: int, y: int, color: str) -> None:
             x0 = x * self.cell
             y0 = (self.grid_cells - 1 - y) * self.cell
             x1 = x0 + self.cell
             y1 = y0 + self.cell
-            self.env_canvas.create_rectangle(x0, y0, x1, y1, fill=color, outline="#bbb")
+            self.env_canvas.create_rectangle(x0, y0, x1, y1, fill=color, outline=self.colors["grid_line"])
+
+        def draw_scanlines(self, canvas: tk.Canvas, width: int, height: int) -> None:
+            for y in range(0, height, 4):
+                canvas.create_line(0, y, width, y, fill="#000000", width=1, stipple="gray50")
 
         def draw_trajectories(self, visible_cells: list[tuple[int, int]], points: list[tuple[int, int]]) -> None:
             self.draw_base_grid(visible_cells, points)
-            shades = ["#d4d4d4", "#bfbfbf", "#969696", "#6b6b6b", "#333333"]
+            shades = ["#1A1A1A", "#66321E", "#99431F", "#CC5429", "#FF6633"]
             recent = self.day_paths[-self.max_traj_days :]
             for idx, (_day, path) in enumerate(recent):
                 shade = shades[min(idx, len(shades) - 1)]
@@ -151,12 +245,13 @@ def run_ui() -> None:
                     self.draw_cell(int(round(cx)), int(round(cy)), shade)
 
             for x, y in points:
-                self.draw_cell(x, y, "#000")
+                self.draw_cell(x, y, self.colors["primary"])
+            self.draw_scanlines(self.env_canvas, self.grid_cells * self.cell, self.grid_cells * self.cell)
 
         def draw_trust_graph(self) -> None:
             self.trust_canvas.delete("all")
             w, h = 360, 180
-            self.trust_canvas.create_rectangle(0, 0, w, h, fill="#fff", outline="#ddd")
+            self.trust_canvas.create_rectangle(0, 0, w, h, fill=self.colors["grid_bg"], outline=self.colors["surface_border"])
             values = [row.get("visible_hits", 0.0) for row in self.history]
             if not values:
                 return
@@ -167,7 +262,8 @@ def run_ui() -> None:
                 x = 10 + (i / max(1, len(values) - 1)) * (w - 20)
                 y = h - 10 - ((v - lo) / span) * (h - 20)
                 pts.extend([x, y])
-            self.trust_canvas.create_line(*pts, fill="#000", width=2)
+            self.trust_canvas.create_line(*pts, fill=self.colors["secondary"], width=2)
+            self.draw_scanlines(self.trust_canvas, w, h)
 
         def on_run(self) -> None:
             try:
