@@ -4,7 +4,7 @@ import random
 from dataclasses import dataclass
 
 from .render import render_view
-from .utils import GRID_MAX
+from .utils import CENTER_CELL, GRID_MAX
 
 MOVE_DELTAS = {
     "+x": (1, 0),
@@ -28,10 +28,12 @@ class SuperblockEnv:
         init_points: list[tuple[int, int]] | None = None,
         render_height: int = 32,
         render_width: int = 16,
+        visible_cells: list[tuple[int, int]] | None = None,
     ) -> None:
         self.init_points = init_points or [(2, 2), (3, 2), (3, 3), (2, 3)]
         self.render_height = render_height
         self.render_width = render_width
+        self.visible_cells = visible_cells or [CENTER_CELL]
         self.points: list[tuple[int, int]] = []
         self.reset()
 
@@ -42,8 +44,16 @@ class SuperblockEnv:
     def get_state(self) -> list[int]:
         return [coord for p in self.points for coord in p]
 
+    def set_visible_cells(self, cells: list[tuple[int, int]]) -> None:
+        self.visible_cells = list(cells)
+
     def render(self) -> list[list[float]]:
-        return render_view(self.points, height=self.render_height, width=self.render_width)
+        return render_view(
+            self.points,
+            height=self.render_height,
+            width=self.render_width,
+            visible_cells=self.visible_cells,
+        )
 
     @staticmethod
     def sample_action(rng: random.Random) -> Action:
