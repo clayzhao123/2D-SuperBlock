@@ -16,6 +16,7 @@ def render_view(
     perspective_p: float = 2.0,
     alpha: float = 0.35,
     subsamples: int = 2,
+    visible_cells: list[tuple[int, int]] | None = None,
 ) -> list[list[float]]:
     p0x, p0y = points[0]
     p1x, p1y = points[1]
@@ -26,6 +27,8 @@ def render_view(
         raise ValueError("Observation edge has zero length.")
     eux, euy = ex / e_norm, ey / e_norm
     nux, nuy = _rotate_minus_90(eux, euy)
+
+    targets = set(visible_cells or [CENTER_CELL])
 
     img = [[0.0 for _ in range(width)] for _ in range(height)]
     offsets = [(k + 0.5) / subsamples for k in range(subsamples)]
@@ -48,7 +51,7 @@ def render_view(
                     if x < 0.0 or y < 0.0 or x >= GRID_MAX or y >= GRID_MAX:
                         continue
                     cell = (int(x), int(y))
-                    if cell == CENTER_CELL:
+                    if cell in targets:
                         pix_acc += 1.0
             img[i][j] = min(1.0, max(0.0, pix_acc / (subsamples * subsamples)))
 

@@ -14,3 +14,10 @@ def test_render_can_see_center_cell_when_facing_it() -> None:
     points = [(20, 19), (19, 19), (19, 18), (20, 18)]
     img = render_view(points)
     assert sum(1 for row in img for px in row if px > 0.0) > 0
+
+
+def test_render_supports_custom_visible_cells() -> None:
+    points = [(20, 19), (19, 19), (19, 18), (20, 18)]
+    img_default = render_view(points)
+    img_custom = render_view(points, visible_cells=[(19, 19)])
+    assert img_default == img_custom
