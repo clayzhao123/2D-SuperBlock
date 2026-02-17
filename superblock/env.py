@@ -63,7 +63,7 @@ class SuperblockEnv:
             turn_dir=rng.choice(list(TURN_DIRS)),
         )
 
-    def step(self, action: Action) -> tuple[list[int], list[list[float]], bool]:
+    def peek_step(self, points: list[tuple[int, int]], action: Action) -> tuple[list[tuple[int, int]], bool]:
         if action.move_dir not in MOVE_DELTAS:
             raise ValueError(f"Unsupported move_dir: {action.move_dir}")
         if action.turn_dir not in TURN_DIRS:
@@ -72,14 +72,16 @@ class SuperblockEnv:
             raise ValueError(f"Unsupported leg_id: {action.leg_id}")
 
         dx, dy = MOVE_DELTAS[action.move_dir]
-        moved_points = [(x + dx, y + dy) for x, y in self.points]
+        moved_points = [(x + dx, y + dy) for x, y in points]
         invalid_move = any(x < 0 or y < 0 or x > GRID_MAX or y > GRID_MAX for x, y in moved_points)
-        if not invalid_move:
-            self.points = moved_points
+        next_points = list(points) if invalid_move else moved_points
 
         if action.turn_dir == "CW":
-            self.points = [self.points[3], self.points[0], self.points[1], self.points[2]]
+            next_points = [next_points[3], next_points[0], next_points[1], next_points[2]]
         else:
-            self.points = [self.points[1], self.points[2], self.points[3], self.points[0]]
+            next_points = [next_points[1], next_points[2], next_points[3], next_points[0]]
+        return next_points, invalid_move
 
+    def step(self, action: Action) -> tuple[list[int], list[list[float]], bool]:
+        self.points, invalid_move = self.peek_step(self.points, action)
         return self.get_state(), self.render(), invalid_move
