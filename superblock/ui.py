@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import argparse
 import random
 from dataclasses import dataclass
 
 from .buffer import ReplayBuffer, Transition
 from .env import SuperblockEnv
+from .forage_train import run as run_forage
 from .models import ForwardModel
 from .monitor import save_checkpoint, write_dashboard, write_history_csv
 from .train import action_to_onehot, parse_visible_cells, train_night
@@ -18,6 +20,8 @@ class UIConfig:
     init_points: list[tuple[int, int]]
     days: int
     steps_per_day: int
+    mode: str
+    motion_checkpoint_path: str
 
 
 def parse_init_points(spec: str) -> list[tuple[int, int]]:
@@ -106,18 +110,24 @@ def run_ui() -> None:
             self.init_points_var = tk.StringVar(value="2:2,3:2,3:3,2:3")
             self.days_var = tk.StringVar(value="100")
             self.steps_var = tk.StringVar(value="100")
+            self.mode_var = tk.StringVar(value="motion")
+            self.motion_ckpt_var = tk.StringVar(value="artifacts/train.ckpt")
 
             self._pixel_label(panel, "调整面板", 0, 0, bold=True)
-            self._pixel_label(panel, "可视单元格坐标", 1, 0)
-            self._styled_entry(panel, self.visible_cells_var, 1)
-            self._pixel_label(panel, "superblock数量(v1.3预留)", 2, 0)
-            self._styled_entry(panel, self.superblock_count_var, 2)
-            self._pixel_label(panel, "superblock初始位置(4点)", 3, 0)
-            self._styled_entry(panel, self.init_points_var, 3)
-            self._pixel_label(panel, "训练天数", 4, 0)
-            self._styled_entry(panel, self.days_var, 4)
-            self._pixel_label(panel, "每天采样步数", 5, 0)
-            self._styled_entry(panel, self.steps_var, 5)
+            self._pixel_label(panel, "训练模式(motion/forage)", 1, 0)
+            self._styled_entry(panel, self.mode_var, 1)
+            self._pixel_label(panel, "可视单元格坐标", 2, 0)
+            self._styled_entry(panel, self.visible_cells_var, 2)
+            self._pixel_label(panel, "superblock数量(v1.3预留)", 3, 0)
+            self._styled_entry(panel, self.superblock_count_var, 3)
+            self._pixel_label(panel, "superblock初始位置(4点)", 4, 0)
+            self._styled_entry(panel, self.init_points_var, 4)
+            self._pixel_label(panel, "训练天数", 5, 0)
+            self._styled_entry(panel, self.days_var, 5)
+            self._pixel_label(panel, "每天采样步数", 6, 0)
+            self._styled_entry(panel, self.steps_var, 6)
+            self._pixel_label(panel, "觅食模式运动ckpt", 7, 0)
+            self._styled_entry(panel, self.motion_ckpt_var, 7)
 
             self.run_btn = tk.Button(
                 panel,
@@ -134,11 +144,11 @@ def run_ui() -> None:
                 font=self.pixel_font,
                 cursor="hand2",
             )
-            self.run_btn.grid(row=6, column=0, columnspan=2, pady=10)
+            self.run_btn.grid(row=8, column=0, columnspan=2, pady=10)
             self.run_btn.bind("<Enter>", lambda _e: self.run_btn.configure(bg=self.colors["secondary"]))
             self.run_btn.bind("<Leave>", lambda _e: self.run_btn.configure(bg=self.colors["primary"]))
 
-            self._pixel_label(panel, "训练指标", 7, 0, bold=True)
+            self._pixel_label(panel, "训练指标", 9, 0, bold=True)
             self.metrics_var = tk.StringVar(value="day=0 | score=0.000 | mse=0.000000")
             tk.Label(
                 panel,
@@ -146,9 +156,9 @@ def run_ui() -> None:
                 bg=self.colors["surface"],
                 fg=self.colors["secondary"],
                 font=self.metric_font,
-            ).grid(row=8, column=0, columnspan=2, sticky="w")
+            ).grid(row=10, column=0, columnspan=2, sticky="w")
 
-            self._pixel_label(panel, "信任图（可视单元格命中次数）", 9, 0, bold=True)
+            self._pixel_label(panel, "信任图（可视单元格命中次数）", 11, 0, bold=True)
             self.trust_canvas = tk.Canvas(
                 panel,
                 width=360,
@@ -157,7 +167,7 @@ def run_ui() -> None:
                 highlightthickness=1,
                 highlightbackground=self.colors["surface_border"],
             )
-            self.trust_canvas.grid(row=10, column=0, columnspan=2, pady=6)
+            self.trust_canvas.grid(row=12, column=0, columnspan=2, pady=6)
 
             self.history: list[dict[str, float]] = []
             self.day_paths: list[tuple[int, list[tuple[float, float]]]] = []
@@ -202,6 +212,9 @@ def run_ui() -> None:
             superblock_count = int(self.superblock_count_var.get())
             days = int(self.days_var.get())
             steps = int(self.steps_var.get())
+            mode = self.mode_var.get().strip().lower()
+            if mode not in {"motion", "forage"}:
+                raise ValueError("训练模式必须是 motion 或 forage")
             if superblock_count < 1:
                 raise ValueError("superblock数量必须>=1")
             return UIConfig(
@@ -210,6 +223,8 @@ def run_ui() -> None:
                 init_points=init_points,
                 days=days,
                 steps_per_day=steps,
+                mode=mode,
+                motion_checkpoint_path=self.motion_ckpt_var.get().strip(),
             )
 
         def draw_base_grid(self, visible_cells: list[tuple[int, int]], points: list[tuple[int, int]]) -> None:
@@ -286,6 +301,33 @@ def run_ui() -> None:
                 self.run_btn.configure(state="normal")
 
         def run_training(self, cfg: UIConfig) -> None:
+            if cfg.mode == "forage":
+                run_forage(
+                    argparse.Namespace(
+                        days=cfg.days,
+                        steps_per_day=cfg.steps_per_day,
+                        food_count=3,
+                        hunger_interval=25,
+                        hunger_death_steps=75,
+                        vision_radius=3,
+                        seed=42,
+                        motion_checkpoint_path=cfg.motion_checkpoint_path,
+                        motion_output_checkpoint="artifacts/train_forage_tuned.ckpt",
+                        motion_epochs_per_day=10,
+                        motion_batch_size=64,
+                        motion_lr=1e-2,
+                        motion_score_k=50.0,
+                        motion_score_w_mse=0.5,
+                        motion_score_w_exact=0.2,
+                        motion_score_w_near=0.3,
+                        out_checkpoint="artifacts/forage.ckpt",
+                        out_metrics_csv="artifacts/forage_metrics.csv",
+                        out_dashboard="artifacts/forage_dashboard.html",
+                    )
+                )
+                self.metrics_var.set("forage done | dashboard=artifacts/forage_dashboard.html")
+                return
+
             set_seed(42)
             rng = random.Random(42)
             env = SuperblockEnv(init_points=cfg.init_points, visible_cells=cfg.visible_cells)

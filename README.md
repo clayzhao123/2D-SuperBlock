@@ -125,13 +125,21 @@ python -m superblock.forage_train \
 
 ---
 
-## 4) 交互 UI（运动训练）
+## 4) 交互 UI（运动训练 + 觅食训练入口）
 
 ```bash
 python -m superblock.ui
 ```
 
-> 当前仓库保留原运动训练 UI；觅食训练为独立 CLI 入口（`superblock.forage_train`）。
+说明：
+
+- `mode=motion`：运行原有运动训练，并输出 `artifacts/ui_dashboard.html`。
+- `mode=forage`：从 `motion_checkpoint_path` 加载已有运动权重，运行觅食训练。
+
+触发 `mode=forage` 时会输出：
+
+- `artifacts/forage_dashboard.html`：包含**运动训练分数**、**感知力/好奇心曲线（天数-值）**、**觅食成功率**。
+- `artifacts/train_forage_tuned.ckpt`：在觅食过程中持续校准后的运动权重。
 
 ---
 
