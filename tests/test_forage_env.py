@@ -1,0 +1,45 @@
+from superblock.env import Action
+from superblock.forage_env import ForageEnv
+from superblock.utils import GRID_MAX
+
+
+def test_food_count_and_bounds() -> None:
+    env = ForageEnv(seed=7, food_count=5)
+    env.reset_day(day_idx=1)
+    assert len(env.food_cells) == 5
+    assert all(0 <= x <= GRID_MAX and 0 <= y <= GRID_MAX for x, y in env.food_cells)
+
+
+def test_hunger_trigger_and_attempt_count() -> None:
+    env = ForageEnv(seed=7, hunger_interval=3, hunger_death_steps=50)
+    env.reset_day(day_idx=1)
+    for _ in range(3):
+        env.step(Action(0, "+x", "CW"))
+    assert env.hungry is True
+    assert env.forage_attempts == 1
+
+
+def test_hungry_death_sets_done() -> None:
+    env = ForageEnv(seed=7, hunger_interval=1, hunger_death_steps=2)
+    env.reset_day(day_idx=1)
+    env.food_cells = [(40, 40)]
+    _, _, _, done1, _ = env.step(Action(0, "+x", "CW"))
+    _, _, _, done2, _ = env.step(Action(0, "+x", "CW"))
+    assert done1 is False
+    assert done2 is True
+
+
+def test_reach_food_in_hungry_state_resets_hunger_and_adds_success() -> None:
+    env = ForageEnv(
+        seed=7,
+        hunger_interval=1,
+        hunger_death_steps=10,
+        init_points=[(40, 39), (40, 40), (39, 40), (39, 39)],
+    )
+    env.reset_day(day_idx=1)
+    env.food_cells = [env.center_cell()]
+    env.step(Action(0, "+x", "CW"))
+    assert env.forage_success == 1
+    assert env.hungry is False
+    assert env.steps_since_last_meal == 0
+    assert env.hungry_steps == 0

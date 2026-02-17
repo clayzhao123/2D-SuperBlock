@@ -135,5 +135,26 @@ def write_dashboard(path: str, history: list[dict[str, float]], visible_cells: l
         f.write(content)
 
 
+def write_history_csv(path: str, history: list[dict[str, float]]) -> None:
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    if not history:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("\n")
+        return
+
+    keys = list(history[0].keys())
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(",".join(keys) + "\n")
+        for row in history:
+            values: list[str] = []
+            for key in keys:
+                value = row[key]
+                if key == "day_idx":
+                    values.append(str(int(value)))
+                else:
+                    values.append(str(value))
+            f.write(",".join(values) + "\n")
+
+
 def checkpoint_exists(path: str) -> bool:
     return os.path.exists(path)
