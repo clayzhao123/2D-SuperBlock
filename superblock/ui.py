@@ -428,6 +428,7 @@ def run_ui() -> None:
                         food_spawn_mode=cfg.food_spawn_mode,
                         food_spawn_radius=cfg.food_spawn_radius,
                         max_food_on_map=cfg.max_food_on_map,
+                        eat_mode="overlap",
                         seed=42,
                         motion_checkpoint_path=cfg.motion_checkpoint_path,
                         motion_output_checkpoint="artifacts/train_forage_tuned.ckpt",
