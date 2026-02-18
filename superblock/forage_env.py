@@ -3,7 +3,7 @@ from __future__ import annotations
 import random
 
 from .env import Action, SuperblockEnv
-from .utils import GRID_MAX
+from .utils import GRID_MAX, occupied_cells, position_key
 
 
 class ForageEnv:
@@ -18,6 +18,7 @@ class ForageEnv:
         food_spawn_mode: str = "static",
         food_spawn_radius: int = 8,
         max_food_on_map: int = 6,
+        eat_mode: str = "overlap",
     ) -> None:
         self.seed = seed
         self.food_count = food_count
@@ -26,6 +27,9 @@ class ForageEnv:
         self.food_spawn_mode = food_spawn_mode
         self.food_spawn_radius = max(0, food_spawn_radius)
         self.max_food_on_map = max(1, max_food_on_map)
+        if eat_mode not in {"center", "overlap"}:
+            raise ValueError(f"Unsupported eat_mode: {eat_mode}")
+        self.eat_mode = eat_mode
 
         self.base_env = SuperblockEnv(init_points=init_points)
         self.points = self.base_env.points
@@ -54,9 +58,11 @@ class ForageEnv:
         return state, img
 
     def center_cell(self) -> tuple[int, int]:
-        cx = sum(x for x, _ in self.points) / len(self.points)
-        cy = sum(y for _, y in self.points) / len(self.points)
-        return round(cx), round(cy)
+        # Backward-compatible API: center_cell now uses the shared stable key helper.
+        return position_key(self.points)
+
+    def occupied_cells(self) -> list[tuple[int, int]]:
+        return occupied_cells(self.points)
 
     def _spawn_food_near(self, center: tuple[int, int], rng: random.Random) -> tuple[int, int]:
         occupied = set(self.points)
@@ -123,7 +129,11 @@ class ForageEnv:
         if self.hungry:
             self.hungry_steps += 1
 
-        ate_food = self.center_cell() in self.food_cells
+        if self.eat_mode == "center":
+            ate_food = self.center_cell() in self.food_cells
+        else:
+            occupied = set(self.occupied_cells())
+            ate_food = any(cell in self.food_cells for cell in occupied)
         if ate_food and self.hungry:
             self.forage_success += 1
             self.hungry = False

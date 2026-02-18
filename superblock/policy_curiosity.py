@@ -6,16 +6,14 @@ from dataclasses import dataclass
 from .env import Action, MOVE_DELTAS, SuperblockEnv, TURN_DIRS
 from .models import ForwardModel
 from .monitor import load_checkpoint
+from .utils import position_key
 
 
 _COORD_SCALE = 40.0
 
 
 def state_to_center_cell(state: list[int]) -> tuple[int, int]:
-    pts = [(state[i], state[i + 1]) for i in range(0, len(state), 2)]
-    cx = sum(x for x, _ in pts) / len(pts)
-    cy = sum(y for _, y in pts) / len(pts)
-    return round(cx), round(cy)
+    return position_key(state)
 
 
 def action_to_onehot(action: Action) -> list[float]:
@@ -46,10 +44,7 @@ class CuriosityMemory:
         if points_or_state and isinstance(points_or_state[0], int):
             cell = state_to_center_cell(points_or_state)  # type: ignore[arg-type]
         else:
-            pts = points_or_state  # type: ignore[assignment]
-            cx = sum(x for x, _ in pts) / len(pts)
-            cy = sum(y for _, y in pts) / len(pts)
-            cell = round(cx), round(cy)
+            cell = position_key(points_or_state)  # type: ignore[arg-type]
         self.visits[cell] = self.visits.get(cell, 0) + 1
 
     def count(self, center_cell: tuple[int, int]) -> int:
