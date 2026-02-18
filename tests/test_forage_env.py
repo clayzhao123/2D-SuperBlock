@@ -43,3 +43,22 @@ def test_reach_food_in_hungry_state_resets_hunger_and_adds_success() -> None:
     assert env.hungry is False
     assert env.steps_since_last_meal == 0
     assert env.hungry_steps == 0
+
+
+def test_spawn_on_hunger_adds_food_near_center() -> None:
+    env = ForageEnv(
+        seed=7,
+        food_count=0,
+        hunger_interval=1,
+        hunger_death_steps=20,
+        food_spawn_mode="spawn_on_hunger",
+        food_spawn_radius=4,
+        max_food_on_map=3,
+    )
+    env.reset_day(day_idx=1)
+    assert len(env.food_cells) == 0
+
+    env.step(Action(0, "+x", "CW"))
+
+    assert env.hungry is True
+    assert len(env.food_cells) >= 1

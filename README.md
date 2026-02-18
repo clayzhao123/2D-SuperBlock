@@ -115,6 +115,13 @@ python -m superblock.forage_train \
 - `artifacts/forage.ckpt`
 - `artifacts/forage_metrics.csv`
 - `artifacts/forage_dashboard.html`
+- （可选）`--out-attempts-csv` 输出按次尝试明细
+
+默认行为（重点）：
+
+- `forage_train` **默认不再继续训练 motion model**（`--motion-epochs-per-day` 默认 `0`）。
+- 因此默认 dashboard/CSV 聚焦觅食指标：成功率、hungry→eat 耗时、死亡与“首次看到食物”时刻。
+- 若需在觅食过程中继续校准 motion，请显式传入例如 `--motion-epochs-per-day 10`。
 
 规则摘要：
 
@@ -138,8 +145,8 @@ python -m superblock.ui
 
 触发 `mode=forage` 时会输出：
 
-- `artifacts/forage_dashboard.html`：包含**运动训练分数**、**感知力/好奇心曲线（天数-值）**、**觅食成功率**。
-- `artifacts/train_forage_tuned.ckpt`：在觅食过程中持续校准后的运动权重。
+- `artifacts/forage_dashboard.html`：默认显示觅食核心指标（成功率、latency、死亡等）；仅当显式启用 motion 日训练时才显示 motion 曲线。
+- `artifacts/train_forage_tuned.ckpt`：运动权重输出（即使不做 motion 日训练也会保留同一路径）。
 
 ---
 

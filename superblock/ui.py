@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from .buffer import ReplayBuffer, Transition
 from .env import SuperblockEnv
 from .forage_env import ForageEnv
-from .forage_train import run as run_forage
+from .forage_train import run_with_callbacks as run_forage_with_callbacks
 from .models import ForwardModel
 from .monitor import save_checkpoint, write_dashboard, write_history_csv
 from .train import action_to_onehot, parse_visible_cells, train_night
@@ -23,6 +23,13 @@ class UIConfig:
     steps_per_day: int
     mode: str
     motion_checkpoint_path: str
+    food_spawn_mode: str
+    food_spawn_radius: int
+    max_food_on_map: int
+    food_count: int
+    hunger_interval: int
+    hunger_death_steps: int
+    vision_radius: int
 
 
 def parse_init_points(spec: str) -> list[tuple[int, int]]:
@@ -127,6 +134,13 @@ def run_ui() -> None:
             self.steps_var = tk.StringVar(value="100")
             self.mode_var = tk.StringVar(value="motion")
             self.motion_ckpt_var = tk.StringVar(value="artifacts/train.ckpt")
+            self.food_spawn_mode_var = tk.StringVar(value="static")
+            self.food_spawn_radius_var = tk.StringVar(value="8")
+            self.max_food_on_map_var = tk.StringVar(value="6")
+            self.food_count_var = tk.StringVar(value="3")
+            self.hunger_interval_var = tk.StringVar(value="25")
+            self.hunger_death_steps_var = tk.StringVar(value="75")
+            self.vision_radius_var = tk.StringVar(value="3")
 
             self._pixel_label(panel, "调整面板", 0, 0, bold=True)
             self._pixel_label(panel, "训练模式(motion/forage)", 1, 0)
@@ -143,6 +157,20 @@ def run_ui() -> None:
             self._styled_entry(panel, self.steps_var, 6)
             self._pixel_label(panel, "觅食模式运动ckpt", 7, 0)
             self._styled_entry(panel, self.motion_ckpt_var, 7)
+            self._pixel_label(panel, "food_spawn_mode", 8, 0)
+            self._styled_entry(panel, self.food_spawn_mode_var, 8)
+            self._pixel_label(panel, "food_spawn_radius", 9, 0)
+            self._styled_entry(panel, self.food_spawn_radius_var, 9)
+            self._pixel_label(panel, "max_food_on_map", 10, 0)
+            self._styled_entry(panel, self.max_food_on_map_var, 10)
+            self._pixel_label(panel, "food_count", 11, 0)
+            self._styled_entry(panel, self.food_count_var, 11)
+            self._pixel_label(panel, "hunger_interval", 12, 0)
+            self._styled_entry(panel, self.hunger_interval_var, 12)
+            self._pixel_label(panel, "hunger_death_steps", 13, 0)
+            self._styled_entry(panel, self.hunger_death_steps_var, 13)
+            self._pixel_label(panel, "vision_radius", 14, 0)
+            self._styled_entry(panel, self.vision_radius_var, 14)
 
             self.run_btn = tk.Button(
                 panel,
@@ -159,11 +187,11 @@ def run_ui() -> None:
                 font=self.pixel_font,
                 cursor="hand2",
             )
-            self.run_btn.grid(row=8, column=0, columnspan=2, pady=10)
+            self.run_btn.grid(row=15, column=0, columnspan=2, pady=10)
             self.run_btn.bind("<Enter>", lambda _e: self.run_btn.configure(bg=self.colors["secondary"]))
             self.run_btn.bind("<Leave>", lambda _e: self.run_btn.configure(bg=self.colors["primary"]))
 
-            self._pixel_label(panel, "训练指标", 9, 0, bold=True)
+            self._pixel_label(panel, "训练指标", 16, 0, bold=True)
             self.metrics_var = tk.StringVar(value="day=0 | score=0.000 | mse=0.000000")
             tk.Label(
                 panel,
@@ -171,9 +199,9 @@ def run_ui() -> None:
                 bg=self.colors["surface"],
                 fg=self.colors["secondary"],
                 font=self.metric_font,
-            ).grid(row=10, column=0, columnspan=2, sticky="w")
+            ).grid(row=17, column=0, columnspan=2, sticky="w")
 
-            self._pixel_label(panel, "信任图（可视单元格命中次数）", 11, 0, bold=True)
+            self._pixel_label(panel, "信任图（可视单元格命中次数）", 18, 0, bold=True)
             self.trust_canvas = tk.Canvas(
                 panel,
                 width=360,
@@ -182,7 +210,7 @@ def run_ui() -> None:
                 highlightthickness=1,
                 highlightbackground=self.colors["surface_border"],
             )
-            self.trust_canvas.grid(row=12, column=0, columnspan=2, pady=6)
+            self.trust_canvas.grid(row=19, column=0, columnspan=2, pady=6)
 
             self.history: list[dict[str, float]] = []
             self.day_paths: list[tuple[int, list[tuple[float, float]]]] = []
@@ -236,6 +264,25 @@ def run_ui() -> None:
                 raise ValueError("训练天数必须>=1")
             if steps < 1:
                 raise ValueError("每天采样步数必须>=1")
+            food_spawn_mode = self.food_spawn_mode_var.get().strip()
+            food_spawn_radius = int(self.food_spawn_radius_var.get())
+            max_food_on_map = int(self.max_food_on_map_var.get())
+            if food_spawn_radius < 0:
+                raise ValueError("food_spawn_radius 必须>=0")
+            if max_food_on_map < 1:
+                raise ValueError("max_food_on_map 必须>=1")
+            food_count = int(self.food_count_var.get())
+            hunger_interval = int(self.hunger_interval_var.get())
+            hunger_death_steps = int(self.hunger_death_steps_var.get())
+            vision_radius = int(self.vision_radius_var.get())
+            if food_count < 0:
+                raise ValueError("food_count 必须>=0")
+            if hunger_interval < 1:
+                raise ValueError("hunger_interval 必须>=1")
+            if hunger_death_steps < 1:
+                raise ValueError("hunger_death_steps 必须>=1")
+            if vision_radius < 0:
+                raise ValueError("vision_radius 必须>=0")
             return UIConfig(
                 visible_cells=visible_cells,
                 superblock_count=superblock_count,
@@ -244,6 +291,13 @@ def run_ui() -> None:
                 steps_per_day=steps,
                 mode=mode,
                 motion_checkpoint_path=self.motion_ckpt_var.get().strip(),
+                food_spawn_mode=food_spawn_mode,
+                food_spawn_radius=food_spawn_radius,
+                max_food_on_map=max_food_on_map,
+                food_count=food_count,
+                hunger_interval=hunger_interval,
+                hunger_death_steps=hunger_death_steps,
+                vision_radius=vision_radius,
             )
 
         def draw_base_grid(
@@ -335,30 +389,49 @@ def run_ui() -> None:
 
         def run_training(self, cfg: UIConfig) -> None:
             if cfg.mode == "forage":
-                food_count = 3
-                preview_env = ForageEnv(seed=42, food_count=food_count, init_points=cfg.init_points)
-                preview_env.reset_day(1)
-                self.draw_trajectories(
-                    cfg.visible_cells,
-                    preview_env.points,
-                    food_cells=preview_env.food_cells,
-                )
-                self.metrics_var.set("forage running | green=food | dashboard=artifacts/forage_dashboard.html")
-                self.root.update_idletasks()
-                self.root.update()
+                self.history = []
+                self.day_paths = []
+                self.metrics_var.set("forage running | day=0 attempts=0 success=0 rate=0.000 deaths=0 last_latency=-1")
 
-                run_forage(
+                def on_step(day_idx: int, _step_idx: int, env: ForageEnv, day_path: list[tuple[float, float]]) -> None:
+                    if self.day_paths and self.day_paths[-1][0] == day_idx:
+                        self.day_paths[-1] = (day_idx, day_path.copy())
+                    else:
+                        self.day_paths.append((day_idx, day_path.copy()))
+                    self.draw_trajectories(cfg.visible_cells, env.points, food_cells=env.food_cells)
+                    self.root.update_idletasks()
+                    self.root.update()
+
+                def on_day_end(metrics: dict[str, float]) -> None:
+                    day = int(metrics.get("day_idx", 0.0))
+                    attempts_total = int(metrics.get("hungry_attempts_total", 0.0))
+                    success_total = int(metrics.get("hungry_success_total", 0.0))
+                    success_rate = metrics.get("hungry_success_rate_total", 0.0)
+                    deaths = int(metrics.get("deaths_total", 0.0))
+                    last_latency = metrics.get("hungry_latency_mean_today", -1.0)
+                    self.history.append(metrics)
+                    self.metrics_var.set(
+                        f"forage | day={day} | attempts_total={attempts_total} | success_total={success_total} "
+                        f"| success_rate={success_rate:.3f} | deaths={deaths} | last_latency={last_latency:.2f}"
+                    )
+                    self.root.update_idletasks()
+                    self.root.update()
+
+                run_forage_with_callbacks(
                     argparse.Namespace(
                         days=cfg.days,
                         steps_per_day=cfg.steps_per_day,
-                        food_count=food_count,
-                        hunger_interval=25,
-                        hunger_death_steps=75,
-                        vision_radius=3,
+                        food_count=cfg.food_count,
+                        hunger_interval=cfg.hunger_interval,
+                        hunger_death_steps=cfg.hunger_death_steps,
+                        vision_radius=cfg.vision_radius,
+                        food_spawn_mode=cfg.food_spawn_mode,
+                        food_spawn_radius=cfg.food_spawn_radius,
+                        max_food_on_map=cfg.max_food_on_map,
                         seed=42,
                         motion_checkpoint_path=cfg.motion_checkpoint_path,
                         motion_output_checkpoint="artifacts/train_forage_tuned.ckpt",
-                        motion_epochs_per_day=10,
+                        motion_epochs_per_day=0,
                         motion_batch_size=64,
                         motion_lr=1e-2,
                         motion_score_k=50.0,
@@ -367,10 +440,12 @@ def run_ui() -> None:
                         motion_score_w_near=0.3,
                         out_checkpoint="artifacts/forage.ckpt",
                         out_metrics_csv="artifacts/forage_metrics.csv",
+                        out_attempts_csv="",
                         out_dashboard="artifacts/forage_dashboard.html",
-                    )
+                    ),
+                    on_step=on_step,
+                    on_day_end=on_day_end,
                 )
-                self.metrics_var.set("forage done | green=food (preview) | dashboard=artifacts/forage_dashboard.html")
                 return
 
             set_seed(42)
