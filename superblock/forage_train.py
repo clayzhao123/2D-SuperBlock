@@ -14,7 +14,7 @@ from .master_dashboard import write_master_dashboard
 from .forage_env import ForageEnv
 from .monitor import load_checkpoint, save_checkpoint
 from .policy_curiosity import CuriosityMemory, CuriosityPolicy, load_forward_model_from_ckpt
-from .utils import occupied_cells, position_key
+from .utils import position_key
 from .train import action_to_onehot, train_night
 
 
@@ -81,7 +81,7 @@ class QLearnForagePolicy:
         self.q_table: dict[tuple[int, int, int, int, int, int], list[float]] = {}
 
     def _feature(self, state_t: list[int], env: ForageEnv, food_memory: FoodMemory) -> tuple[int, int, int, int, int, int]:
-        cells = occupied_cells(state_t)
+        cells = env.occupied_cells(state_t)
         px, py = position_key(state_t)
         target = _nearest_food(cells, food_memory.food_cells) or _nearest_food(cells, set(env.food_cells))
         dx_s, dy_s = 0, 0
@@ -258,6 +258,8 @@ def run_with_callbacks(
         food_spawn_radius=args.food_spawn_radius,
         max_food_on_map=args.max_food_on_map,
         eat_mode=args.eat_mode,
+        occupy_mode=args.occupy_mode,
+        vision_from=args.vision_from,
     )
     curiosity_memory = CuriosityMemory()
     curiosity_policy = CuriosityPolicy(forward_model=model, memory=curiosity_memory)
@@ -301,6 +303,7 @@ def run_with_callbacks(
 
         for step_idx in range(1, args.steps_per_day + 1):
             visible = env.observe_visible_food(args.vision_radius)
+            food_memory.retain(set(env.food_cells))
             food_memory.update(visible)
             if visible and first_food_seen_step < 0:
                 first_food_seen_step = step_idx
@@ -310,7 +313,7 @@ def run_with_callbacks(
             prev_attempts = env.forage_attempts
             prev_successes = env.forage_success
 
-            prev_cells = occupied_cells(state)
+            prev_cells = env.occupied_cells(state)
             prev_target = _nearest_food(prev_cells, food_memory.food_cells) or _nearest_food(prev_cells, set(env.food_cells))
             if qlearn_policy is not None:
                 feat = qlearn_policy._feature(state, env, food_memory)
@@ -319,6 +322,7 @@ def run_with_callbacks(
                 action = forage_policy.select_action(state, env, rng)
                 action_idx = -1
             state, _, _, done, ate_food = env.step(action)
+            food_memory.retain(set(env.food_cells))
 
             pos_key = position_key(state)
             curiosity_sum += 1.0 / (1.0 + curiosity_memory.count(pos_key))
@@ -329,7 +333,7 @@ def run_with_callbacks(
 
             if env.forage_attempts > prev_attempts:
                 day_attempt_idx += 1
-                target_food = _nearest_food(occupied_cells(state), food_memory.food_cells)
+                target_food = _nearest_food(env.occupied_cells(state), food_memory.food_cells)
                 active_attempt = {
                     "day_idx": day_idx,
                     "attempt_idx": day_attempt_idx,
@@ -357,7 +361,7 @@ def run_with_callbacks(
             if qlearn_policy is not None:
                 reward = -0.01
                 if prev_target is not None and env.hungry:
-                    dist = _min_food_distance(occupied_cells(state), prev_target)
+                    dist = _min_food_distance(env.occupied_cells(state), prev_target)
                     reward += -0.05 * dist
                 if ate_food:
                     reward += 10.0
@@ -555,6 +559,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--food-spawn-radius", type=int, default=8)
     parser.add_argument("--max-food-on-map", type=int, default=6)
     parser.add_argument("--eat-mode", type=str, choices=["center", "overlap"], default="overlap")
+    parser.add_argument("--occupy-mode", type=str, choices=["single_cell", "shape"], default="single_cell")
+    parser.add_argument("--vision-from", type=str, choices=["center", "all_edges"], default="all_edges")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--policy", type=str, choices=["heuristic", "qlearn", "imitation"], default="heuristic")
     parser.add_argument("--q-alpha", type=float, default=0.3)

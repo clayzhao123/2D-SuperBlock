@@ -60,3 +60,39 @@ def test_food_navigation_avoids_invalid_translate_near_boundary() -> None:
 
     _, invalid = env.base_env.peek_step(env.points, action)
     assert not invalid
+
+
+def test_curiosity_policy_does_not_always_pick_same_line_action() -> None:
+    env = ForageEnv(init_points=[(20, 20), (21, 20), (21, 21), (20, 21)])
+    state_t, _ = env.reset_day(day_idx=0)
+    curiosity = CuriosityPolicy(forward_model=ForwardModel(), memory=CuriosityMemory(), epsilon=0.0)
+
+    actions = {curiosity.select_action(state_t, env.base_env, random.Random(seed)).move_dir for seed in range(20)}
+    assert len(actions) >= 2
+
+
+def test_food_navigation_ignores_stale_memory_and_tracks_live_food() -> None:
+    env = ForageEnv(init_points=[(5, 5), (6, 5), (6, 6), (5, 6)])
+    state_t, _ = env.reset_day(day_idx=0)
+
+    policy = _build_policy()
+    policy.food_memory.update([(30, 30)])  # stale memory
+    env.food_cells = [(8, 5)]  # live food on map
+    policy.food_memory.retain(set(env.food_cells))
+
+    env.hungry = True
+    action = policy.select_action(state_t, env, random.Random(0))
+    next_points, _ = env.base_env.peek_step(env.points, action)
+
+    cur_dist = min(abs(x - 8) + abs(y - 5) for x, y in env.occupied_cells(state_t))
+    next_dist = min(abs(x - 8) + abs(y - 5) for x, y in env.occupied_cells(next_points))
+    assert next_dist <= cur_dist
+
+
+def test_food_memory_retain_removes_disappeared_food() -> None:
+    memory = FoodMemory()
+    memory.update([(1, 1), (2, 2), (3, 3)])
+
+    memory.retain({(2, 2), (4, 4)})
+
+    assert memory.food_cells == {(2, 2)}
