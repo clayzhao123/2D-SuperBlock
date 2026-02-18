@@ -13,6 +13,7 @@ def test_forage_train_parser_defaults_to_no_motion_training() -> None:
     assert args.food_spawn_radius == 8
     assert args.max_food_on_map == 6
     assert args.policy == "heuristic"
+    assert args.eat_mode == "overlap"
 
 
 def test_forage_train_outputs_forage_metrics_without_motion_columns(tmp_path) -> None:
@@ -62,6 +63,8 @@ def test_forage_train_outputs_forage_metrics_without_motion_columns(tmp_path) ->
     assert "hungry_latency_mean_today" in row
     assert "steps_to_first_food_seen_today" in row
     assert "food_seen_flag_today" in row
+    assert "food_count_on_map_today" in row
+    assert "unreachable_food_seen_today" in row
     assert "motion_score" not in row
 
     with open(tmp_path / "forage_dashboard.html", encoding="utf-8") as f:

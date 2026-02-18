@@ -5,12 +5,12 @@ import random
 from superblock.forage_agent import FoodMemory, ForagePolicy
 from superblock.forage_env import ForageEnv
 from superblock.models import ForwardModel
-from superblock.policy_curiosity import CuriosityMemory, CuriosityPolicy, state_to_center_cell
+from superblock.policy_curiosity import CuriosityMemory, CuriosityPolicy
+from superblock.utils import occupied_cells
 
 
-def _center_dist(state_t: list[int], food_cell: tuple[int, int]) -> int:
-    cx, cy = state_to_center_cell(state_t)
-    return abs(cx - food_cell[0]) + abs(cy - food_cell[1])
+def _food_dist(state_t: list[int], food_cell: tuple[int, int]) -> int:
+    return min(abs(x - food_cell[0]) + abs(y - food_cell[1]) for x, y in occupied_cells(state_t))
 
 
 def _build_policy(*, use_forward_model_for_food_nav: bool = False) -> ForagePolicy:
@@ -33,12 +33,12 @@ def test_hungry_food_navigation_reduces_distance_quickly() -> None:
     env.hungry = True
     rng = random.Random(0)
 
-    prev_dist = _center_dist(state_t, target_food)
+    prev_dist = _food_dist(state_t, target_food)
     distances = [prev_dist]
     for _ in range(3):
         action = policy.select_action(state_t, env, rng)
         state_t, _, _, _, _ = env.step(action)
-        next_dist = _center_dist(state_t, target_food)
+        next_dist = _food_dist(state_t, target_food)
         distances.append(next_dist)
         assert next_dist <= prev_dist
         prev_dist = next_dist

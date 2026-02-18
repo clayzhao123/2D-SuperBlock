@@ -4,7 +4,12 @@ import random
 
 from .env import Action
 from .forage_env import ForageEnv
-from .policy_curiosity import CuriosityMemory, CuriosityPolicy, state_to_center_cell
+from .policy_curiosity import CuriosityMemory, CuriosityPolicy
+from .utils import occupied_cells
+
+
+def _min_food_distance(cells: list[tuple[int, int]], target: tuple[int, int]) -> int:
+    return min(abs(x - target[0]) + abs(y - target[1]) for x, y in cells)
 
 
 class FoodMemory:
@@ -32,10 +37,10 @@ class ForagePolicy:
         self.use_forward_model_for_food_nav = use_forward_model_for_food_nav
 
     def _select_towards_food(self, state_t: list[int], env: ForageEnv) -> Action:
-        current = state_to_center_cell(state_t)
+        current_cells = occupied_cells(state_t)
         target = min(
             self.food_memory.food_cells,
-            key=lambda cell: abs(cell[0] - current[0]) + abs(cell[1] - current[1]),
+            key=lambda cell: _min_food_distance(current_cells, cell),
         )
 
         best_action = self.curiosity_policy.candidate_actions()[0]
@@ -43,15 +48,12 @@ class ForagePolicy:
         for action in self.curiosity_policy.candidate_actions():
             if self.use_forward_model_for_food_nav:
                 pred_state = self.curiosity_policy._predict_next_state(state_t, action)
-                pred_center = state_to_center_cell(pred_state)
-                dist = abs(pred_center[0] - target[0]) + abs(pred_center[1] - target[1])
+                pred_cells = occupied_cells(pred_state)
+                dist = _min_food_distance(pred_cells, target)
                 _, invalid = env.base_env.peek_step(env.points, action)
             else:
                 next_points, invalid = env.base_env.peek_step(env.points, action)
-                cx = sum(x for x, _ in next_points) / len(next_points)
-                cy = sum(y for _, y in next_points) / len(next_points)
-                next_center = round(cx), round(cy)
-                dist = abs(next_center[0] - target[0]) + abs(next_center[1] - target[1])
+                dist = _min_food_distance(next_points, target)
             if invalid:
                 dist += 1e6
             if dist < best_dist:

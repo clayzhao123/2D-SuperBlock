@@ -13,7 +13,8 @@ from .forage_agent import FoodMemory, ForagePolicy
 from .master_dashboard import write_master_dashboard
 from .forage_env import ForageEnv
 from .monitor import load_checkpoint, save_checkpoint
-from .policy_curiosity import CuriosityMemory, CuriosityPolicy, load_forward_model_from_ckpt, state_to_center_cell
+from .policy_curiosity import CuriosityMemory, CuriosityPolicy, load_forward_model_from_ckpt
+from .utils import occupied_cells, position_key
 from .train import action_to_onehot, train_night
 
 
@@ -44,10 +45,14 @@ def _percentile(values: list[int], q: float) -> float:
     return float(ordered[idx])
 
 
-def _nearest_food(center: tuple[int, int], foods: set[tuple[int, int]]) -> tuple[int, int] | None:
+def _min_food_distance(cells: list[tuple[int, int]], food: tuple[int, int]) -> int:
+    return min(abs(x - food[0]) + abs(y - food[1]) for x, y in cells)
+
+
+def _nearest_food(cells: list[tuple[int, int]], foods: set[tuple[int, int]]) -> tuple[int, int] | None:
     if not foods:
         return None
-    return min(foods, key=lambda cell: abs(cell[0] - center[0]) + abs(cell[1] - center[1]))
+    return min(foods, key=lambda cell: _min_food_distance(cells, cell))
 
 
 def _sgn(value: int) -> int:
@@ -76,16 +81,18 @@ class QLearnForagePolicy:
         self.q_table: dict[tuple[int, int, int, int, int, int], list[float]] = {}
 
     def _feature(self, state_t: list[int], env: ForageEnv, food_memory: FoodMemory) -> tuple[int, int, int, int, int, int]:
-        cx, cy = state_to_center_cell(state_t)
-        target = _nearest_food((cx, cy), food_memory.food_cells) or _nearest_food((cx, cy), set(env.food_cells))
+        cells = occupied_cells(state_t)
+        px, py = position_key(state_t)
+        target = _nearest_food(cells, food_memory.food_cells) or _nearest_food(cells, set(env.food_cells))
         dx_s, dy_s = 0, 0
         if target is not None:
-            dx_s = _sgn(target[0] - cx)
-            dy_s = _sgn(target[1] - cy)
+            nearest = min(cells, key=lambda cell: abs(cell[0] - target[0]) + abs(cell[1] - target[1]))
+            dx_s = _sgn(target[0] - nearest[0])
+            dy_s = _sgn(target[1] - nearest[1])
 
         remaining = max(0, env.hunger_death_steps - env.hungry_steps)
         remaining_bucket = min(4, remaining // max(1, env.hunger_death_steps // 5 or 1))
-        return (cx // self.cell_div, cy // self.cell_div, 1 if env.hungry else 0, dx_s, dy_s, remaining_bucket)
+        return (px // self.cell_div, py // self.cell_div, 1 if env.hungry else 0, dx_s, dy_s, remaining_bucket)
 
     def _ensure_row(self, feat: tuple[int, int, int, int, int, int]) -> list[float]:
         if feat not in self.q_table:
@@ -250,6 +257,7 @@ def run_with_callbacks(
         food_spawn_mode=args.food_spawn_mode,
         food_spawn_radius=args.food_spawn_radius,
         max_food_on_map=args.max_food_on_map,
+        eat_mode=args.eat_mode,
     )
     curiosity_memory = CuriosityMemory()
     curiosity_policy = CuriosityPolicy(forward_model=model, memory=curiosity_memory)
@@ -302,8 +310,8 @@ def run_with_callbacks(
             prev_attempts = env.forage_attempts
             prev_successes = env.forage_success
 
-            prev_center = state_to_center_cell(state)
-            prev_target = _nearest_food(prev_center, food_memory.food_cells) or _nearest_food(prev_center, set(env.food_cells))
+            prev_cells = occupied_cells(state)
+            prev_target = _nearest_food(prev_cells, food_memory.food_cells) or _nearest_food(prev_cells, set(env.food_cells))
             if qlearn_policy is not None:
                 feat = qlearn_policy._feature(state, env, food_memory)
                 action_idx, action = qlearn_policy.select_action(feat, rng)
@@ -312,8 +320,8 @@ def run_with_callbacks(
                 action_idx = -1
             state, _, _, done, ate_food = env.step(action)
 
-            center = (round(sum(state[::2]) / 4.0), round(sum(state[1::2]) / 4.0))
-            curiosity_sum += 1.0 / (1.0 + curiosity_memory.count(center))
+            pos_key = position_key(state)
+            curiosity_sum += 1.0 / (1.0 + curiosity_memory.count(pos_key))
             curiosity_memory.update(state)
             day_path.append((sum(state[::2]) / 4.0, sum(state[1::2]) / 4.0))
             if on_step is not None:
@@ -321,11 +329,11 @@ def run_with_callbacks(
 
             if env.forage_attempts > prev_attempts:
                 day_attempt_idx += 1
-                target_food = _nearest_food(center, food_memory.food_cells)
+                target_food = _nearest_food(occupied_cells(state), food_memory.food_cells)
                 active_attempt = {
                     "day_idx": day_idx,
                     "attempt_idx": day_attempt_idx,
-                    "start_center": center,
+                    "start_center": pos_key,
                     "target_food": target_food,
                     "start_step": step_idx,
                 }
@@ -349,7 +357,7 @@ def run_with_callbacks(
             if qlearn_policy is not None:
                 reward = -0.01
                 if prev_target is not None and env.hungry:
-                    dist = abs(center[0] - prev_target[0]) + abs(center[1] - prev_target[1])
+                    dist = _min_food_distance(occupied_cells(state), prev_target)
                     reward += -0.05 * dist
                 if ate_food:
                     reward += 10.0
@@ -437,6 +445,12 @@ def run_with_callbacks(
         if qlearn_policy is not None:
             qlearn_policy.end_day()
 
+        unreachable_food_seen_today = 0
+        if args.eat_mode == "center" and first_food_seen_step > 0 and food_memory.food_cells:
+            key = env.center_cell()
+            if not any((abs(fx - key[0]) + abs(fy - key[1])) % 2 == 0 for fx, fy in food_memory.food_cells):
+                unreachable_food_seen_today = 1
+
         row = {
             "day_idx": float(day_idx),
             "policy": 0.0 if policy_name == "heuristic" else 1.0,
@@ -448,6 +462,8 @@ def run_with_callbacks(
             "hungry_latency_p90_today": _percentile(day_success_latencies, 0.9),
             "steps_to_first_food_seen_today": float(first_food_seen_step),
             "food_seen_flag_today": float(food_seen_flag_today),
+            "food_count_on_map_today": float(len(env.food_cells)),
+            "unreachable_food_seen_today": float(unreachable_food_seen_today),
             "hungry_attempts_total": float(hungry_attempts_total),
             "hungry_success_total": float(hungry_success_total),
             "hungry_success_rate_total": float(hungry_success_rate_total),
@@ -538,6 +554,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--food-spawn-mode", type=str, default="static")
     parser.add_argument("--food-spawn-radius", type=int, default=8)
     parser.add_argument("--max-food-on-map", type=int, default=6)
+    parser.add_argument("--eat-mode", type=str, choices=["center", "overlap"], default="overlap")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--policy", type=str, choices=["heuristic", "qlearn", "imitation"], default="heuristic")
     parser.add_argument("--q-alpha", type=float, default=0.3)

@@ -35,6 +35,7 @@ def test_reach_food_in_hungry_state_resets_hunger_and_adds_success() -> None:
         hunger_interval=1,
         hunger_death_steps=10,
         init_points=[(40, 39), (40, 40), (39, 40), (39, 39)],
+        eat_mode="center",
     )
     env.reset_day(day_idx=1)
     env.food_cells = [env.center_cell()]
@@ -43,6 +44,39 @@ def test_reach_food_in_hungry_state_resets_hunger_and_adds_success() -> None:
     assert env.hungry is False
     assert env.steps_since_last_meal == 0
     assert env.hungry_steps == 0
+
+
+def test_overlap_mode_eats_food_on_any_occupied_cell() -> None:
+    env = ForageEnv(
+        seed=7,
+        hunger_interval=1,
+        hunger_death_steps=10,
+        init_points=[(10, 10), (11, 10), (11, 11), (10, 11)],
+        eat_mode="overlap",
+    )
+    env.reset_day(day_idx=1)
+    env.food_cells = [(11, 11)]
+
+    env.step(Action(0, "+x", "CW"))
+
+    assert env.forage_success == 1
+    assert env.hungry is False
+
+
+def test_overlap_mode_can_eat_odd_coordinate_food() -> None:
+    env = ForageEnv(
+        seed=7,
+        hunger_interval=1,
+        hunger_death_steps=10,
+        init_points=[(10, 10), (11, 10), (11, 11), (10, 11)],
+        eat_mode="overlap",
+    )
+    env.reset_day(day_idx=1)
+    env.food_cells = [(11, 10)]
+
+    env.step(Action(0, "+x", "CW"))
+
+    assert env.forage_success == 1
 
 
 def test_spawn_on_hunger_adds_food_near_center() -> None:

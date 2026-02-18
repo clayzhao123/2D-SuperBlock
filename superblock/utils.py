@@ -36,3 +36,25 @@ def mse(pred: list[list[float]], target: list[list[float]]) -> float:
 
 def exp(value: float) -> float:
     return math.exp(value)
+
+
+def _to_points(points_or_state: list[tuple[int, int]] | list[int]) -> list[tuple[int, int]]:
+    if points_or_state and isinstance(points_or_state[0], int):
+        state = points_or_state  # type: ignore[assignment]
+        return [(int(state[i]), int(state[i + 1])) for i in range(0, len(state), 2)]
+    points = points_or_state  # type: ignore[assignment]
+    return [(int(x), int(y)) for x, y in points]
+
+
+def occupied_cells(points_or_state: list[tuple[int, int]] | list[int]) -> list[tuple[int, int]]:
+    """Return the four integer grid cells currently occupied by the block."""
+    return _to_points(points_or_state)
+
+
+def position_key(points_or_state: list[tuple[int, int]] | list[int]) -> tuple[int, int]:
+    """Return a stable discrete position key shared by foraging + curiosity logic.
+
+    We use the shape anchor (min_x, min_y) to avoid Python banker rounding at *.5.
+    """
+    pts = _to_points(points_or_state)
+    return min(x for x, _ in pts), min(y for _, y in pts)
