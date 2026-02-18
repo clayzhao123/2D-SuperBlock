@@ -53,6 +53,7 @@ def test_overlap_mode_eats_food_on_any_occupied_cell() -> None:
         hunger_death_steps=10,
         init_points=[(10, 10), (11, 10), (11, 11), (10, 11)],
         eat_mode="overlap",
+        occupy_mode="shape",
     )
     env.reset_day(day_idx=1)
     env.food_cells = [(11, 11)]
@@ -70,6 +71,7 @@ def test_overlap_mode_can_eat_odd_coordinate_food() -> None:
         hunger_death_steps=10,
         init_points=[(10, 10), (11, 10), (11, 11), (10, 11)],
         eat_mode="overlap",
+        occupy_mode="shape",
     )
     env.reset_day(day_idx=1)
     env.food_cells = [(11, 10)]
@@ -77,6 +79,51 @@ def test_overlap_mode_can_eat_odd_coordinate_food() -> None:
     env.step(Action(0, "+x", "CW"))
 
     assert env.forage_success == 1
+
+
+def test_eating_food_removes_food_from_map() -> None:
+    env = ForageEnv(
+        seed=7,
+        hunger_interval=1,
+        hunger_death_steps=10,
+        init_points=[(10, 10), (11, 10), (11, 11), (10, 11)],
+        eat_mode="overlap",
+        occupy_mode="shape",
+    )
+    env.reset_day(day_idx=1)
+    env.food_cells = [(11, 11), (30, 30)]
+
+    _, _, _, _, ate_food = env.step(Action(0, "+x", "CW"))
+
+    assert ate_food is True
+    assert (11, 11) not in env.food_cells
+    assert (30, 30) in env.food_cells
+
+
+def test_default_occupy_mode_is_single_cell() -> None:
+    env = ForageEnv(init_points=[(10, 10), (11, 10), (11, 11), (10, 11)])
+    env.reset_day(day_idx=1)
+    assert env.occupied_cells() == [env.center_cell()]
+
+
+def test_all_edges_vision_can_see_food_near_corner() -> None:
+    env = ForageEnv(
+        init_points=[(10, 10), (11, 10), (11, 11), (10, 11)],
+        vision_from="all_edges",
+    )
+    env.reset_day(day_idx=1)
+    env.food_cells = [(13, 10)]
+    assert env.observe_visible_food(vision_radius=2) == [(13, 10)]
+
+
+def test_center_vision_cannot_see_food_only_near_corner() -> None:
+    env = ForageEnv(
+        init_points=[(10, 10), (11, 10), (11, 11), (10, 11)],
+        vision_from="center",
+    )
+    env.reset_day(day_idx=1)
+    env.food_cells = [(13, 10)]
+    assert env.observe_visible_food(vision_radius=2) == []
 
 
 def test_spawn_on_hunger_adds_food_near_center() -> None:
