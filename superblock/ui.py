@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from .buffer import ReplayBuffer, Transition
 from .env import SuperblockEnv
+from .forage_env import ForageEnv
 from .forage_train import run as run_forage
 from .models import ForwardModel
 from .monitor import save_checkpoint, write_dashboard, write_history_csv
@@ -37,6 +38,19 @@ def center_of(points: list[tuple[int, int]]) -> tuple[float, float]:
     return sx / len(points), sy / len(points)
 
 
+def build_trust_curve_points(values: list[float], width: int, height: int, padding: int = 10) -> list[float]:
+    if not values:
+        return []
+    lo, hi = 0.0, max(values)
+    span = hi - lo if hi != lo else 1.0
+    pts: list[float] = []
+    for i, v in enumerate(values):
+        x = padding + (i / max(1, len(values) - 1)) * (width - 2 * padding)
+        y = height - padding - ((v - lo) / span) * (height - 2 * padding)
+        pts.extend([x, y])
+    return pts
+
+
 def run_ui() -> None:
     import tkinter as tk
     import tkinter.font as tkfont
@@ -62,6 +76,7 @@ def run_ui() -> None:
                 "grid_bg": "#080808",
                 "input_bg": "#0D0D0D",
                 "input_border": "#333333",
+                "food": "#22c55e",
             }
 
             self.pixel_font = self._pick_font(("Press Start 2P", "Courier New", "Courier"), size=8)
@@ -217,6 +232,10 @@ def run_ui() -> None:
                 raise ValueError("训练模式必须是 motion 或 forage")
             if superblock_count < 1:
                 raise ValueError("superblock数量必须>=1")
+            if days < 1:
+                raise ValueError("训练天数必须>=1")
+            if steps < 1:
+                raise ValueError("每天采样步数必须>=1")
             return UIConfig(
                 visible_cells=visible_cells,
                 superblock_count=superblock_count,
@@ -227,7 +246,12 @@ def run_ui() -> None:
                 motion_checkpoint_path=self.motion_ckpt_var.get().strip(),
             )
 
-        def draw_base_grid(self, visible_cells: list[tuple[int, int]], points: list[tuple[int, int]]) -> None:
+        def draw_base_grid(
+            self,
+            visible_cells: list[tuple[int, int]],
+            points: list[tuple[int, int]],
+            food_cells: list[tuple[int, int]] | None = None,
+        ) -> None:
             self.env_canvas.delete("all")
             for x in range(self.grid_cells):
                 for y in range(self.grid_cells):
@@ -235,6 +259,9 @@ def run_ui() -> None:
                     if (x, y) in visible_cells:
                         color = self.colors["grid_line"]
                     self.draw_cell(x, y, color)
+            if food_cells:
+                for x, y in food_cells:
+                    self.draw_cell(x, y, self.colors["food"])
             for x, y in points:
                 self.draw_cell(x, y, self.colors["primary"])
             self.draw_scanlines(self.env_canvas, self.grid_cells * self.cell, self.grid_cells * self.cell)
@@ -250,8 +277,13 @@ def run_ui() -> None:
             for y in range(0, height, 4):
                 canvas.create_line(0, y, width, y, fill="#000000", width=1, stipple="gray50")
 
-        def draw_trajectories(self, visible_cells: list[tuple[int, int]], points: list[tuple[int, int]]) -> None:
-            self.draw_base_grid(visible_cells, points)
+        def draw_trajectories(
+            self,
+            visible_cells: list[tuple[int, int]],
+            points: list[tuple[int, int]],
+            food_cells: list[tuple[int, int]] | None = None,
+        ) -> None:
+            self.draw_base_grid(visible_cells, points, food_cells=food_cells)
             shades = ["#1A1A1A", "#66321E", "#99431F", "#CC5429", "#FF6633"]
             recent = self.day_paths[-self.max_traj_days :]
             for idx, (_day, path) in enumerate(recent):
@@ -259,6 +291,9 @@ def run_ui() -> None:
                 for cx, cy in path:
                     self.draw_cell(int(round(cx)), int(round(cy)), shade)
 
+            if food_cells:
+                for x, y in food_cells:
+                    self.draw_cell(x, y, self.colors["food"])
             for x, y in points:
                 self.draw_cell(x, y, self.colors["primary"])
             self.draw_scanlines(self.env_canvas, self.grid_cells * self.cell, self.grid_cells * self.cell)
@@ -270,14 +305,12 @@ def run_ui() -> None:
             values = [row.get("visible_hits", 0.0) for row in self.history]
             if not values:
                 return
-            lo, hi = 0.0, max(values)
-            span = hi - lo if hi != lo else 1.0
-            pts = []
-            for i, v in enumerate(values):
-                x = 10 + (i / max(1, len(values) - 1)) * (w - 20)
-                y = h - 10 - ((v - lo) / span) * (h - 20)
-                pts.extend([x, y])
-            self.trust_canvas.create_line(*pts, fill=self.colors["secondary"], width=2)
+            pts = build_trust_curve_points(values, width=w, height=h)
+            if len(pts) >= 4:
+                self.trust_canvas.create_line(*pts, fill=self.colors["secondary"], width=2)
+            else:
+                x, y = pts
+                self.trust_canvas.create_oval(x - 2, y - 2, x + 2, y + 2, fill=self.colors["secondary"], outline="")
             self.draw_scanlines(self.trust_canvas, w, h)
 
         def on_run(self) -> None:
@@ -302,11 +335,23 @@ def run_ui() -> None:
 
         def run_training(self, cfg: UIConfig) -> None:
             if cfg.mode == "forage":
+                food_count = 3
+                preview_env = ForageEnv(seed=42, food_count=food_count, init_points=cfg.init_points)
+                preview_env.reset_day(1)
+                self.draw_trajectories(
+                    cfg.visible_cells,
+                    preview_env.points,
+                    food_cells=preview_env.food_cells,
+                )
+                self.metrics_var.set("forage running | green=food | dashboard=artifacts/forage_dashboard.html")
+                self.root.update_idletasks()
+                self.root.update()
+
                 run_forage(
                     argparse.Namespace(
                         days=cfg.days,
                         steps_per_day=cfg.steps_per_day,
-                        food_count=3,
+                        food_count=food_count,
                         hunger_interval=25,
                         hunger_death_steps=75,
                         vision_radius=3,
@@ -325,7 +370,7 @@ def run_ui() -> None:
                         out_dashboard="artifacts/forage_dashboard.html",
                     )
                 )
-                self.metrics_var.set("forage done | dashboard=artifacts/forage_dashboard.html")
+                self.metrics_var.set("forage done | green=food (preview) | dashboard=artifacts/forage_dashboard.html")
                 return
 
             set_seed(42)
