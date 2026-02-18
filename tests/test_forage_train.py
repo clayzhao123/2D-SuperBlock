@@ -1,3 +1,4 @@
+import argparse
 import csv
 
 from superblock.buffer import ReplayBuffer
@@ -176,3 +177,46 @@ def test_forage_train_qlearn_saves_q_table(tmp_path) -> None:
         payload = pickle.load(f)
     assert payload["policy"] == "qlearn"
     assert isinstance(payload["q_table"], dict)
+
+
+def test_forage_train_accepts_namespace_without_new_optional_fields(tmp_path) -> None:
+    motion_ckpt = tmp_path / "train.ckpt"
+    save_checkpoint(
+        str(motion_ckpt),
+        day_idx=0,
+        model=ForwardModel(),
+        buffer=ReplayBuffer(),
+        history=[],
+        visible_cells=[(19, 19)],
+    )
+
+    args = argparse.Namespace(
+        days=1,
+        steps_per_day=4,
+        food_count=1,
+        hunger_interval=2,
+        hunger_death_steps=20,
+        vision_radius=3,
+        food_spawn_mode="static",
+        food_spawn_radius=8,
+        max_food_on_map=6,
+        eat_mode="overlap",
+        seed=42,
+        motion_checkpoint_path=str(motion_ckpt),
+        motion_output_checkpoint=str(tmp_path / "motion_out.ckpt"),
+        motion_epochs_per_day=0,
+        motion_batch_size=64,
+        motion_lr=1e-2,
+        motion_score_k=50.0,
+        motion_score_w_mse=0.5,
+        motion_score_w_exact=0.2,
+        motion_score_w_near=0.3,
+        out_checkpoint=str(tmp_path / "forage.ckpt"),
+        out_metrics_csv=str(tmp_path / "forage_metrics.csv"),
+        out_attempts_csv="",
+        out_dashboard=str(tmp_path / "forage_dashboard.html"),
+    )
+
+    run_with_callbacks(args)
+
+    assert (tmp_path / "forage.ckpt").exists()

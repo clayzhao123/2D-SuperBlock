@@ -59,7 +59,7 @@ class CuriosityPolicy:
     invalid_penalty: float = 1e6
 
     def candidate_actions(self) -> list[Action]:
-        return [Action(0, move_dir, turn_dir) for move_dir in MOVE_DELTAS for turn_dir in TURN_DIRS]
+        return [Action(leg_id, move_dir, turn_dir) for leg_id in range(4) for move_dir in MOVE_DELTAS for turn_dir in TURN_DIRS]
 
     def _predict_next_state(self, state_t: list[int], action: Action) -> list[int]:
         model_in = [v / _COORD_SCALE for v in state_t] + action_to_onehot(action)
@@ -75,15 +75,17 @@ class CuriosityPolicy:
         if rng.random() < self.epsilon:
             return rng.choice(actions)
 
-        best_action = actions[0]
         best_score = float("-inf")
+        best_actions: list[Action] = []
         for action in actions:
             pred_state = self._predict_next_state(state_t, action)
             pred_center = state_to_center_cell(pred_state)
             novelty = 1.0 / (1.0 + self.memory.count(pred_center))
             invalid = self._is_invalid(env, action)
             score = novelty - (self.invalid_penalty if invalid else 0.0)
-            if score > best_score:
+            if score > best_score + 1e-12:
                 best_score = score
-                best_action = action
-        return best_action
+                best_actions = [action]
+            elif abs(score - best_score) <= 1e-12:
+                best_actions.append(action)
+        return rng.choice(best_actions or actions)

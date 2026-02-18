@@ -3,7 +3,7 @@ from __future__ import annotations
 import random
 
 from .env import Action, SuperblockEnv
-from .utils import GRID_MAX, occupied_cells, position_key
+from .utils import GRID_MAX, occupied_cells as shape_occupied_cells, position_key
 
 
 class ForageEnv:
@@ -19,6 +19,8 @@ class ForageEnv:
         food_spawn_radius: int = 8,
         max_food_on_map: int = 6,
         eat_mode: str = "overlap",
+        occupy_mode: str = "single_cell",
+        vision_from: str = "all_edges",
     ) -> None:
         self.seed = seed
         self.food_count = food_count
@@ -30,6 +32,12 @@ class ForageEnv:
         if eat_mode not in {"center", "overlap"}:
             raise ValueError(f"Unsupported eat_mode: {eat_mode}")
         self.eat_mode = eat_mode
+        if occupy_mode not in {"single_cell", "shape"}:
+            raise ValueError(f"Unsupported occupy_mode: {occupy_mode}")
+        if vision_from not in {"center", "all_edges"}:
+            raise ValueError(f"Unsupported vision_from: {vision_from}")
+        self.occupy_mode = occupy_mode
+        self.vision_from = vision_from
 
         self.base_env = SuperblockEnv(init_points=init_points)
         self.points = self.base_env.points
@@ -61,11 +69,14 @@ class ForageEnv:
         # Backward-compatible API: center_cell now uses the shared stable key helper.
         return position_key(self.points)
 
-    def occupied_cells(self) -> list[tuple[int, int]]:
-        return occupied_cells(self.points)
+    def occupied_cells(self, points_or_state: list[tuple[int, int]] | list[int] | None = None) -> list[tuple[int, int]]:
+        source: list[tuple[int, int]] | list[int] = self.points if points_or_state is None else points_or_state
+        if self.occupy_mode == "single_cell":
+            return [position_key(source)]
+        return shape_occupied_cells(source)
 
     def _spawn_food_near(self, center: tuple[int, int], rng: random.Random) -> tuple[int, int]:
-        occupied = set(self.points)
+        occupied = set(self.occupied_cells())
         existing = set(self.food_cells)
         cx, cy = center
 
@@ -105,10 +116,14 @@ class ForageEnv:
             self.food_cells.append(new_food)
 
     def observe_visible_food(self, vision_radius: int = 0) -> list[tuple[int, int]]:
-        cx, cy = self.center_cell()
+        if self.vision_from == "center":
+            view_sources = {self.center_cell()}
+        else:
+            view_sources = set(self.points)
+            view_sources.add(self.center_cell())
         visible = []
         for fx, fy in self.food_cells:
-            if abs(fx - cx) <= vision_radius and abs(fy - cy) <= vision_radius:
+            if any(abs(fx - sx) <= vision_radius and abs(fy - sy) <= vision_radius for sx, sy in view_sources):
                 visible.append((fx, fy))
         return visible
 
@@ -130,11 +145,13 @@ class ForageEnv:
             self.hungry_steps += 1
 
         if self.eat_mode == "center":
-            ate_food = self.center_cell() in self.food_cells
+            eaten_cells = {self.center_cell()} if self.center_cell() in self.food_cells else set()
         else:
             occupied = set(self.occupied_cells())
-            ate_food = any(cell in self.food_cells for cell in occupied)
+            eaten_cells = {cell for cell in occupied if cell in self.food_cells}
+        ate_food = bool(eaten_cells)
         if ate_food and self.hungry:
+            self.food_cells = [cell for cell in self.food_cells if cell not in eaten_cells]
             self.forage_success += 1
             self.hungry = False
             self.steps_since_last_meal = 0
