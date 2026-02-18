@@ -5,6 +5,7 @@ import random
 
 from .buffer import ReplayBuffer, Transition
 from .env import Action, SuperblockEnv
+from .master_dashboard import write_master_dashboard
 from .models import ForwardModel
 from .monitor import checkpoint_exists, load_checkpoint, save_checkpoint, write_dashboard
 from .utils import GRID_MAX, exp, mse, set_seed
@@ -128,6 +129,7 @@ def run(args: argparse.Namespace) -> None:
                 break
 
     write_dashboard(args.dashboard_path, history, visible_cells)
+    write_master_dashboard(motion_ckpt_path=args.checkpoint_path, motion_dashboard_path=args.dashboard_path)
 
     try:
         for day_idx in range(start_day + 1, args.max_days + 1):
@@ -184,6 +186,7 @@ def run(args: argparse.Namespace) -> None:
             )
 
             write_dashboard(args.dashboard_path, history, visible_cells)
+            write_master_dashboard(motion_ckpt_path=args.checkpoint_path, motion_dashboard_path=args.dashboard_path)
             if day_idx % args.save_every_days == 0:
                 save_checkpoint(
                     args.checkpoint_path,
@@ -211,6 +214,7 @@ def run(args: argparse.Namespace) -> None:
             visible_cells=visible_cells,
         )
         write_dashboard(args.dashboard_path, history, visible_cells)
+        write_master_dashboard(motion_ckpt_path=args.checkpoint_path, motion_dashboard_path=args.dashboard_path)
         print(f"Checkpoint saved to {args.checkpoint_path}")
         print(f"Dashboard updated at {args.dashboard_path}")
 
