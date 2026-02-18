@@ -260,8 +260,13 @@ def run_with_callbacks(
         food_spawn_radius=args.food_spawn_radius,
         max_food_on_map=args.max_food_on_map,
         eat_mode=args.eat_mode,
+<<<<<<< codex/fix-superblock-behavior-in-foraging-training-6mi44g
         occupy_mode=occupy_mode,
         vision_from=vision_from,
+=======
+        occupy_mode=args.occupy_mode,
+        vision_from=args.vision_from,
+>>>>>>> main
     )
     curiosity_memory = CuriosityMemory()
     curiosity_policy = CuriosityPolicy(forward_model=model, memory=curiosity_memory)
