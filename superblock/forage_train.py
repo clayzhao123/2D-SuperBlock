@@ -239,6 +239,8 @@ def run_with_callbacks(
     q_epsilon_min = getattr(args, "q_epsilon_min", 0.02)
     q_epsilon_decay = getattr(args, "q_epsilon_decay", 0.99)
     q_cell_div = getattr(args, "q_cell_div", 4)
+    occupy_mode = getattr(args, "occupy_mode", "single_cell")
+    vision_from = getattr(args, "vision_from", "all_edges")
 
     rng = random.Random(args.seed)
     motion_payload = load_checkpoint(args.motion_checkpoint_path)
@@ -258,8 +260,13 @@ def run_with_callbacks(
         food_spawn_radius=args.food_spawn_radius,
         max_food_on_map=args.max_food_on_map,
         eat_mode=args.eat_mode,
+<<<<<<< codex/fix-superblock-behavior-in-foraging-training-6mi44g
+        occupy_mode=occupy_mode,
+        vision_from=vision_from,
+=======
         occupy_mode=args.occupy_mode,
         vision_from=args.vision_from,
+>>>>>>> main
     )
     curiosity_memory = CuriosityMemory()
     curiosity_policy = CuriosityPolicy(forward_model=model, memory=curiosity_memory)
