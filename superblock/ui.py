@@ -37,6 +37,19 @@ def center_of(points: list[tuple[int, int]]) -> tuple[float, float]:
     return sx / len(points), sy / len(points)
 
 
+def build_trust_curve_points(values: list[float], width: int, height: int, padding: int = 10) -> list[float]:
+    if not values:
+        return []
+    lo, hi = 0.0, max(values)
+    span = hi - lo if hi != lo else 1.0
+    pts: list[float] = []
+    for i, v in enumerate(values):
+        x = padding + (i / max(1, len(values) - 1)) * (width - 2 * padding)
+        y = height - padding - ((v - lo) / span) * (height - 2 * padding)
+        pts.extend([x, y])
+    return pts
+
+
 def run_ui() -> None:
     import tkinter as tk
     import tkinter.font as tkfont
@@ -217,6 +230,10 @@ def run_ui() -> None:
                 raise ValueError("训练模式必须是 motion 或 forage")
             if superblock_count < 1:
                 raise ValueError("superblock数量必须>=1")
+            if days < 1:
+                raise ValueError("训练天数必须>=1")
+            if steps < 1:
+                raise ValueError("每天采样步数必须>=1")
             return UIConfig(
                 visible_cells=visible_cells,
                 superblock_count=superblock_count,
@@ -270,14 +287,12 @@ def run_ui() -> None:
             values = [row.get("visible_hits", 0.0) for row in self.history]
             if not values:
                 return
-            lo, hi = 0.0, max(values)
-            span = hi - lo if hi != lo else 1.0
-            pts = []
-            for i, v in enumerate(values):
-                x = 10 + (i / max(1, len(values) - 1)) * (w - 20)
-                y = h - 10 - ((v - lo) / span) * (h - 20)
-                pts.extend([x, y])
-            self.trust_canvas.create_line(*pts, fill=self.colors["secondary"], width=2)
+            pts = build_trust_curve_points(values, width=w, height=h)
+            if len(pts) >= 4:
+                self.trust_canvas.create_line(*pts, fill=self.colors["secondary"], width=2)
+            else:
+                x, y = pts
+                self.trust_canvas.create_oval(x - 2, y - 2, x + 2, y + 2, fill=self.colors["secondary"], outline="")
             self.draw_scanlines(self.trust_canvas, w, h)
 
         def on_run(self) -> None:
