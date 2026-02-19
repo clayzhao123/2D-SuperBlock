@@ -3,13 +3,13 @@ from __future__ import annotations
 import argparse
 import csv
 import random
-from collections.abc import Callable
 from pathlib import Path
 
+from .env import Action
 from .evade_env import EvadeEnv
 from .master_dashboard import write_master_dashboard
 from .monitor import _line_svg
-from .policy_curiosity import CuriosityMemory, CuriosityPolicy, load_forward_model_from_ckpt
+from .policy_curiosity import CuriosityPolicy, CuriosityMemory, load_forward_model_from_ckpt
 from .utils import position_key
 
 
@@ -42,12 +42,7 @@ def _is_loop(path: list[tuple[int, int]], current: tuple[int, int]) -> bool:
     return len(path) >= 6 and current in path[-6:]
 
 
-def run_with_callbacks(
-    args: argparse.Namespace,
-    *,
-    on_step: Callable[[int, int, EvadeEnv, list[tuple[int, int]]], None] | None = None,
-    on_day_end: Callable[[dict[str, float]], None] | None = None,
-) -> None:
+def run(args: argparse.Namespace) -> None:
     rng = random.Random(args.seed)
     env = EvadeEnv(seed=args.seed, grass_area=args.grass_area, grass_count=args.grass_count, vision_length=3)
     model = load_forward_model_from_ckpt(args.motion_checkpoint_path)
@@ -62,8 +57,7 @@ def run_with_callbacks(
         policy.memory.update(state)
         survived = 1
         walk: list[tuple[int, int]] = [position_key(state)]
-
-        for step_idx in range(1, args.steps_per_day + 1):
+        for _ in range(args.steps_per_day):
             action = policy.select_action(state, env.base_env, rng)
             next_points, will_invalid = env.base_env.peek_step(env.base_env.points, action)
             if _is_loop(walk, position_key(next_points)) or will_invalid:
@@ -72,32 +66,21 @@ def run_with_callbacks(
             pos = position_key(state)
             walk.append(pos)
             policy.memory.update(state)
-
-            if on_step is not None:
-                on_step(day_idx, step_idx, env, walk)
-
             if done:
                 survived = 0
                 break
-
         success_total += survived
-        row = {
-            "day_idx": float(day_idx),
-            "success_today": float(survived),
-            "success_rate_total": success_total / day_idx,
-        }
-        history.append(row)
+        history.append(
+            {
+                "day_idx": float(day_idx),
+                "success_today": float(survived),
+                "success_rate_total": success_total / day_idx,
+            }
+        )
 
         write_evade_dashboard(args.dashboard_path, history)
         write_evade_csv(args.metrics_csv_path, history)
         write_master_dashboard(evade_metrics_csv_path=args.metrics_csv_path, evade_dashboard_path=args.dashboard_path)
-
-        if on_day_end is not None:
-            on_day_end(row)
-
-
-def run(args: argparse.Namespace) -> None:
-    run_with_callbacks(args)
 
 
 def build_parser() -> argparse.ArgumentParser:

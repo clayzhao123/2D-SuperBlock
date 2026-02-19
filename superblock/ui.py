@@ -9,7 +9,7 @@ from .env import SuperblockEnv
 from .forage_env import ForageEnv
 from .forage_train import run_with_callbacks as run_forage_with_callbacks
 from .evade_env import EvadeEnv
-from . import evade_train as evade_train_module
+from .evade_train import run_with_callbacks as run_evade_with_callbacks
 from .models import ForwardModel
 from .monitor import save_checkpoint, write_dashboard, write_history_csv
 from .train import action_to_onehot, parse_visible_cells, train_night
@@ -514,8 +514,8 @@ def run_ui() -> None:
                     self.root.update_idletasks()
                     self.root.update()
 
-                evade_runner = getattr(evade_train_module, "run_with_callbacks", None)
-                evade_args = argparse.Namespace(
+                run_evade_with_callbacks(
+                    argparse.Namespace(
                         seed=42,
                         days=cfg.days,
                         steps_per_day=cfg.steps_per_day,
@@ -525,19 +525,10 @@ def run_ui() -> None:
                         motion_checkpoint_path=cfg.motion_checkpoint_path,
                         dashboard_path="artifacts/evade_dashboard.html",
                         metrics_csv_path="artifacts/evade_metrics.csv",
-                    )
-                if callable(evade_runner):
-                    evade_runner(
-                        evade_args,
-                        on_step=on_step,
-                        on_day_end=on_day_end,
-                    )
-                else:
-                    # 兼容旧版本 evade_train（仅提供 run），避免 UI 导入阶段直接失败。
-                    evade_train_module.run(evade_args)
-
-                if self.history:
-                    self.draw_trust_graph()
+                    ),
+                    on_step=on_step,
+                    on_day_end=on_day_end,
+                )
                 return
 
             set_seed(42)
