@@ -57,6 +57,28 @@ def _load_forage_history(metrics_csv_path: str, forage_ckpt_path: str) -> list[d
     return payload.get("history", [])
 
 
+
+
+def _load_simple_rate_history(metrics_csv_path: str) -> list[dict[str, float]]:
+    csv_path = Path(metrics_csv_path)
+    if not csv_path.exists():
+        return []
+    with csv_path.open(newline="", encoding="utf-8") as f:
+        rows = list(csv.DictReader(f))
+    out: list[dict[str, float]] = []
+    for row in rows:
+        converted: dict[str, float] = {}
+        for k, v in row.items():
+            if v is None or v == "":
+                continue
+            try:
+                converted[k] = float(v)
+            except ValueError:
+                continue
+        out.append(converted)
+    return out
+
+
 def write_master_dashboard(
     out_path: str = "artifacts/master_dashboard.html",
     *,
@@ -66,6 +88,8 @@ def write_master_dashboard(
     forage_ckpt_path: str = "artifacts/forage.ckpt",
     motion_dashboard_path: str = "artifacts/dashboard.html",
     forage_dashboard_path: str = "artifacts/forage_dashboard.html",
+    evade_metrics_csv_path: str = "artifacts/evade_metrics.csv",
+    evade_dashboard_path: str = "artifacts/evade_dashboard.html",
 ) -> None:
     Path(out_path).parent.mkdir(parents=True, exist_ok=True)
 
@@ -90,6 +114,9 @@ def write_master_dashboard(
     forage_rate_svg = _line_svg(rate_values, color="#16a34a")
     forage_latency_svg = _line_svg(latency_values, color="#f59e0b")
     forage_deaths_svg = _line_svg(deaths_values, color="#dc2626")
+
+    evade_history = _load_simple_rate_history(evade_metrics_csv_path)
+    evade_rate_svg = _line_svg([row.get("success_rate_total", 0.0) for row in evade_history], color="#ef4444")
 
     visible_text = html.escape(json.dumps(visible_cells, ensure_ascii=False))
 
@@ -149,6 +176,14 @@ def write_master_dashboard(
     <div>
       <h4>deaths 曲线</h4>
       {forage_deaths_svg}
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Evade</h2>
+    <div>
+      <h4>survival_success_rate 曲线</h4>
+      {evade_rate_svg}
     </div>
   </div>
 </body>

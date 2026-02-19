@@ -289,6 +289,7 @@ def run_with_callbacks(
     for day_idx in range(1, args.days + 1):
         state, _ = env.reset_day(day_idx)
         food_memory.reset_day()
+        curiosity_policy.recent_path.clear()
         curiosity_memory.update(state)
 
         attempts_before_day = env.forage_attempts
@@ -300,7 +301,7 @@ def run_with_callbacks(
         day_attempt_idx = 0
         active_attempt: dict[str, object] | None = None
         day_path: list[tuple[float, float]] = [
-            (sum(state[::2]) / 4.0, sum(state[1::2]) / 4.0)
+            (sum(state[::2]) / max(1, len(state[::2])), sum(state[1::2]) / max(1, len(state[1::2])))
         ]
 
         for step_idx in range(1, args.steps_per_day + 1):
@@ -329,7 +330,7 @@ def run_with_callbacks(
             pos_key = position_key(state)
             curiosity_sum += 1.0 / (1.0 + curiosity_memory.count(pos_key))
             curiosity_memory.update(state)
-            day_path.append((sum(state[::2]) / 4.0, sum(state[1::2]) / 4.0))
+            day_path.append((sum(state[::2]) / max(1, len(state[::2])), sum(state[1::2]) / max(1, len(state[1::2]))))
             if on_step is not None:
                 on_step(day_idx, step_idx, env, day_path)
 

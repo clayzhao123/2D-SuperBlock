@@ -19,7 +19,10 @@ def render_view(
     visible_cells: list[tuple[int, int]] | None = None,
 ) -> list[list[float]]:
     p0x, p0y = points[0]
-    p1x, p1y = points[1]
+    if len(points) > 1:
+        p1x, p1y = points[1]
+    else:
+        p1x, p1y = p0x + 1, p0y
 
     ex, ey = p1x - p0x, p1y - p0y
     e_norm = (ex * ex + ey * ey) ** 0.5
