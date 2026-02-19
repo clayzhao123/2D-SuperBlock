@@ -2,21 +2,24 @@
 
 纯 Python（无新增第三方依赖）的 `Superblock` 训练与行为实验项目。
 
-当前包含两条**独立**能力链路：
+当前包含三条**独立**能力链路：
 
 1. **运动能力训练（ForwardModel）**：学习 `state_t + action -> state_{t+1}`。
 2. **觅食能力训练（Foraging）**：在饥饿约束下，用“好奇心探索 + 食物记忆导航”提高觅食成功率。
+3. **躲避能力训练（Evade）**：在天敌追捕规则下学习提高生存成功率。
 
 ---
 
 ## 功能总览
 
-- 40x40 网格中的 `Superblock` 刚体运动（平移 + 90°离散转向）
+- 40x40 网格中的 `Superblock` 单格体运动（平移 + 方向标签）
 - 前向运动模型 `ForwardModel`（纯 Python MLP）
 - 白天采样 / 夜间训练流程（运动训练）
 - Dashboard + Checkpoint + CSV 指标落盘
 - **Curiosity 探索策略**（使用已训练 ForwardModel 预测下一步）
+- 抗兜圈机制：对最近轨迹回访施加惩罚，降低短周期循环
 - **Foraging 环境**（食物、饥饿触发、死亡窗口、成功率统计）
+- **Evade 环境**（superhacker 巡航/追捕/丢失搜索 + 草丛隐蔽）
 - `pytest` 覆盖核心环境与渲染规则，以及觅食规则
 
 ---
@@ -130,9 +133,36 @@ python -m superblock.forage_train \
 - 吃到食物后计一次成功并重置饥饿状态。
 - 非饥饿时以 Curiosity 探索；饥饿且已有食物记忆时朝最近记忆食物导航。
 
+
 ---
 
-## 4) 交互 UI（运动训练 + 觅食训练入口）
+## 4) 躲避训练（天敌 superhacker）
+
+运行：
+
+```bash
+python -m superblock.evade_train \
+  --days 100 \
+  --steps-per-day 100 \
+  --grass-area 10 \
+  --grass-count 3 \
+  --motion-checkpoint-path artifacts/train.ckpt
+```
+
+规则摘要：
+
+- `superhacker` 体积 1 格，四方向视野，视距 3。
+- 发现 `superblock` 后进入追捕；目标脱离视野后在最后丢失点执行环绕搜索；搜索失败后回到巡航轨道。
+- 草丛随机形状生成（面积与数量可配），`superblock` 进入草丛时不会被发现。
+- 每天默认 100 步；若被天敌触碰（同格）则当天失败，否则成功。
+
+默认产物：
+
+- `artifacts/evade_metrics.csv`
+- `artifacts/evade_dashboard.html`
+- `artifacts/master_dashboard.html`（同步显示 evade 成功率曲线）
+
+## 5) 交互 UI（运动训练 + 觅食训练入口）
 
 ```bash
 python -m superblock.ui
@@ -160,6 +190,8 @@ pytest -q
 
 ## 项目结构
 
+> 注：`evade_train.py` / `evade_env.py` 为新增躲避训练主链路。
+
 ```text
 superblock/
   __init__.py
@@ -175,9 +207,12 @@ superblock/
   forage_env.py
   forage_agent.py
   forage_train.py
+  evade_env.py
+  evade_train.py
   utils.py
 tests/
   test_env.py
   test_render.py
   test_forage_env.py
+  test_evade_env.py
 ```

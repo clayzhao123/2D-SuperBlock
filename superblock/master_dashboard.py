@@ -139,6 +139,7 @@ def write_master_dashboard(
   <div class=\"links\">
     <a href=\"{motion_dashboard_path}\">Motion Dashboard</a>
     <a href=\"{forage_dashboard_path}\">Forage Dashboard</a>
+    <a href=\"{evade_dashboard_path}\">Evade Dashboard</a>
   </div>
 
   <div class=\"section\">
