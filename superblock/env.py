@@ -30,7 +30,7 @@ class SuperblockEnv:
         render_width: int = 16,
         visible_cells: list[tuple[int, int]] | None = None,
     ) -> None:
-        self.init_points = init_points or [(2, 2), (3, 2), (3, 3), (2, 3)]
+        self.init_points = init_points or [(2, 2)]
         self.render_height = render_height
         self.render_width = render_width
         self.visible_cells = visible_cells or [CENTER_CELL]
@@ -76,10 +76,11 @@ class SuperblockEnv:
         invalid_move = any(x < 0 or y < 0 or x > GRID_MAX or y > GRID_MAX for x, y in moved_points)
         next_points = list(points) if invalid_move else moved_points
 
-        if action.turn_dir == "CW":
-            next_points = [next_points[3], next_points[0], next_points[1], next_points[2]]
-        else:
-            next_points = [next_points[1], next_points[2], next_points[3], next_points[0]]
+        if len(next_points) > 1:
+            if action.turn_dir == "CW":
+                next_points = [next_points[-1], *next_points[:-1]]
+            else:
+                next_points = [*next_points[1:], next_points[0]]
         return next_points, invalid_move
 
     def step(self, action: Action) -> tuple[list[int], list[list[float]], bool]:
