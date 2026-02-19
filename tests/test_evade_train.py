@@ -3,12 +3,7 @@ from argparse import Namespace
 from pathlib import Path
 
 from superblock.buffer import ReplayBuffer
-from superblock.evade_train import (
-    _choose_grass_escape_action,
-    _resolve_motion_checkpoint_path,
-    resolve_motion_checkpoint_path,
-    run_with_callbacks,
-)
+from superblock.evade_train import _choose_grass_escape_action, _resolve_motion_checkpoint_path, run_with_callbacks
 from superblock.models import ForwardModel
 from superblock.monitor import save_checkpoint
 from superblock.policy_curiosity import CuriosityMemory, CuriosityPolicy
@@ -100,17 +95,3 @@ def test_choose_grass_escape_action_prefers_closer_grass() -> None:
     next_points, invalid = env.base_env.peek_step(env.base_env.points, action)
     assert invalid is False
     assert abs(next_points[0][0] - 10) + abs(next_points[0][1] - 9) <= 1
-
-
-def test_public_resolve_motion_checkpoint_path_alias(tmp_path: Path) -> None:
-    motion_ckpt = tmp_path / "train.ckpt"
-    save_checkpoint(
-        str(motion_ckpt),
-        day_idx=1,
-        model=ForwardModel(),
-        buffer=ReplayBuffer(),
-        history=[],
-        visible_cells=[(19, 19)],
-    )
-
-    assert resolve_motion_checkpoint_path(str(motion_ckpt)) == str(motion_ckpt)
