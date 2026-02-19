@@ -8,6 +8,8 @@ from .buffer import ReplayBuffer, Transition
 from .env import SuperblockEnv
 from .forage_env import ForageEnv
 from .forage_train import run_with_callbacks as run_forage_with_callbacks
+from .evade_env import EvadeEnv
+from . import evade_train as evade_train_module
 from .models import ForwardModel
 from .monitor import save_checkpoint, write_dashboard, write_history_csv
 from .train import action_to_onehot, parse_visible_cells, train_night
@@ -30,12 +32,14 @@ class UIConfig:
     hunger_interval: int
     hunger_death_steps: int
     vision_radius: int
+    grass_area: int
+    grass_count: int
 
 
 def parse_init_points(spec: str) -> list[tuple[int, int]]:
     pts = parse_visible_cells(spec)
-    if len(pts) != 4:
-        raise ValueError("superblock 初始位置必须包含 4 个点，格式如 2:2,3:2,3:3,2:3")
+    if len(pts) != 1:
+        raise ValueError("superblock 初始位置必须包含 1 个点，格式如 2:2")
     return pts
 
 
@@ -129,7 +133,7 @@ def run_ui() -> None:
 
             self.visible_cells_var = tk.StringVar(value="19:19")
             self.superblock_count_var = tk.StringVar(value="1")
-            self.init_points_var = tk.StringVar(value="2:2,3:2,3:3,2:3")
+            self.init_points_var = tk.StringVar(value="2:2")
             self.days_var = tk.StringVar(value="100")
             self.steps_var = tk.StringVar(value="100")
             self.mode_var = tk.StringVar(value="motion")
@@ -141,15 +145,17 @@ def run_ui() -> None:
             self.hunger_interval_var = tk.StringVar(value="25")
             self.hunger_death_steps_var = tk.StringVar(value="75")
             self.vision_radius_var = tk.StringVar(value="3")
+            self.grass_area_var = tk.StringVar(value="10")
+            self.grass_count_var = tk.StringVar(value="3")
 
             self._pixel_label(panel, "调整面板", 0, 0, bold=True)
-            self._pixel_label(panel, "训练模式(motion/forage)", 1, 0)
+            self._pixel_label(panel, "训练模式(motion/forage/evade)", 1, 0)
             self._styled_entry(panel, self.mode_var, 1)
             self._pixel_label(panel, "可视单元格坐标", 2, 0)
             self._styled_entry(panel, self.visible_cells_var, 2)
             self._pixel_label(panel, "superblock数量(v1.3预留)", 3, 0)
             self._styled_entry(panel, self.superblock_count_var, 3)
-            self._pixel_label(panel, "superblock初始位置(4点)", 4, 0)
+            self._pixel_label(panel, "superblock初始位置(1点)", 4, 0)
             self._styled_entry(panel, self.init_points_var, 4)
             self._pixel_label(panel, "训练天数", 5, 0)
             self._styled_entry(panel, self.days_var, 5)
@@ -171,6 +177,10 @@ def run_ui() -> None:
             self._styled_entry(panel, self.hunger_death_steps_var, 13)
             self._pixel_label(panel, "vision_radius", 14, 0)
             self._styled_entry(panel, self.vision_radius_var, 14)
+            self._pixel_label(panel, "grass_area(evade)", 15, 0)
+            self._styled_entry(panel, self.grass_area_var, 15)
+            self._pixel_label(panel, "grass_count(evade)", 16, 0)
+            self._styled_entry(panel, self.grass_count_var, 16)
 
             self.run_btn = tk.Button(
                 panel,
@@ -187,11 +197,11 @@ def run_ui() -> None:
                 font=self.pixel_font,
                 cursor="hand2",
             )
-            self.run_btn.grid(row=15, column=0, columnspan=2, pady=10)
+            self.run_btn.grid(row=17, column=0, columnspan=2, pady=10)
             self.run_btn.bind("<Enter>", lambda _e: self.run_btn.configure(bg=self.colors["secondary"]))
             self.run_btn.bind("<Leave>", lambda _e: self.run_btn.configure(bg=self.colors["primary"]))
 
-            self._pixel_label(panel, "训练指标", 16, 0, bold=True)
+            self._pixel_label(panel, "训练指标", 18, 0, bold=True)
             self.metrics_var = tk.StringVar(value="day=0 | score=0.000 | mse=0.000000")
             tk.Label(
                 panel,
@@ -199,9 +209,9 @@ def run_ui() -> None:
                 bg=self.colors["surface"],
                 fg=self.colors["secondary"],
                 font=self.metric_font,
-            ).grid(row=17, column=0, columnspan=2, sticky="w")
+            ).grid(row=19, column=0, columnspan=2, sticky="w")
 
-            self._pixel_label(panel, "信任图（可视单元格命中次数）", 18, 0, bold=True)
+            self._pixel_label(panel, "信任图（可视单元格命中次数）", 20, 0, bold=True)
             self.trust_canvas = tk.Canvas(
                 panel,
                 width=360,
@@ -210,12 +220,12 @@ def run_ui() -> None:
                 highlightthickness=1,
                 highlightbackground=self.colors["surface_border"],
             )
-            self.trust_canvas.grid(row=19, column=0, columnspan=2, pady=6)
+            self.trust_canvas.grid(row=21, column=0, columnspan=2, pady=6)
 
             self.history: list[dict[str, float]] = []
             self.day_paths: list[tuple[int, list[tuple[float, float]]]] = []
 
-            self.draw_base_grid([(19, 19)], [(2, 2), (3, 2), (3, 3), (2, 3)])
+            self.draw_base_grid([(19, 19)], [(2, 2)])
 
         def _pick_font(self, candidates: tuple[str, ...], size: int, weight: str = "normal") -> tuple[str, int, str]:
             available = set(tkfont.families())
@@ -256,8 +266,8 @@ def run_ui() -> None:
             days = int(self.days_var.get())
             steps = int(self.steps_var.get())
             mode = self.mode_var.get().strip().lower()
-            if mode not in {"motion", "forage"}:
-                raise ValueError("训练模式必须是 motion 或 forage")
+            if mode not in {"motion", "forage", "evade"}:
+                raise ValueError("训练模式必须是 motion、forage 或 evade")
             if superblock_count < 1:
                 raise ValueError("superblock数量必须>=1")
             if days < 1:
@@ -283,6 +293,12 @@ def run_ui() -> None:
                 raise ValueError("hunger_death_steps 必须>=1")
             if vision_radius < 0:
                 raise ValueError("vision_radius 必须>=0")
+            grass_area = int(self.grass_area_var.get())
+            grass_count = int(self.grass_count_var.get())
+            if grass_area < 1:
+                raise ValueError("grass_area 必须>=1")
+            if grass_count < 0:
+                raise ValueError("grass_count 必须>=0")
             return UIConfig(
                 visible_cells=visible_cells,
                 superblock_count=superblock_count,
@@ -298,6 +314,8 @@ def run_ui() -> None:
                 hunger_interval=hunger_interval,
                 hunger_death_steps=hunger_death_steps,
                 vision_radius=vision_radius,
+                grass_area=grass_area,
+                grass_count=grass_count,
             )
 
         def draw_base_grid(
@@ -305,6 +323,8 @@ def run_ui() -> None:
             visible_cells: list[tuple[int, int]],
             points: list[tuple[int, int]],
             food_cells: list[tuple[int, int]] | None = None,
+            grass_cells: set[tuple[int, int]] | None = None,
+            superhacker_pos: tuple[int, int] | None = None,
         ) -> None:
             self.env_canvas.delete("all")
             for x in range(self.grid_cells):
@@ -313,9 +333,14 @@ def run_ui() -> None:
                     if (x, y) in visible_cells:
                         color = self.colors["grid_line"]
                     self.draw_cell(x, y, color)
+            if grass_cells:
+                for x, y in grass_cells:
+                    self.draw_cell(x, y, "#d1d5db")
             if food_cells:
                 for x, y in food_cells:
                     self.draw_cell(x, y, self.colors["food"])
+            if superhacker_pos is not None:
+                self.draw_cell(superhacker_pos[0], superhacker_pos[1], "#ff2d2d")
             for x, y in points:
                 self.draw_cell(x, y, self.colors["primary"])
             self.draw_scanlines(self.env_canvas, self.grid_cells * self.cell, self.grid_cells * self.cell)
@@ -336,8 +361,10 @@ def run_ui() -> None:
             visible_cells: list[tuple[int, int]],
             points: list[tuple[int, int]],
             food_cells: list[tuple[int, int]] | None = None,
+            grass_cells: set[tuple[int, int]] | None = None,
+            superhacker_pos: tuple[int, int] | None = None,
         ) -> None:
-            self.draw_base_grid(visible_cells, points, food_cells=food_cells)
+            self.draw_base_grid(visible_cells, points, food_cells=food_cells, grass_cells=grass_cells, superhacker_pos=superhacker_pos)
             shades = ["#1A1A1A", "#66321E", "#99431F", "#CC5429", "#FF6633"]
             recent = self.day_paths[-self.max_traj_days :]
             for idx, (_day, path) in enumerate(recent):
@@ -345,9 +372,14 @@ def run_ui() -> None:
                 for cx, cy in path:
                     self.draw_cell(int(round(cx)), int(round(cy)), shade)
 
+            if grass_cells:
+                for x, y in grass_cells:
+                    self.draw_cell(x, y, "#d1d5db")
             if food_cells:
                 for x, y in food_cells:
                     self.draw_cell(x, y, self.colors["food"])
+            if superhacker_pos is not None:
+                self.draw_cell(superhacker_pos[0], superhacker_pos[1], "#ff2d2d")
             for x, y in points:
                 self.draw_cell(x, y, self.colors["primary"])
             self.draw_scanlines(self.env_canvas, self.grid_cells * self.cell, self.grid_cells * self.cell)
@@ -449,6 +481,63 @@ def run_ui() -> None:
                     on_step=on_step,
                     on_day_end=on_day_end,
                 )
+                return
+
+            if cfg.mode == "evade":
+                self.history = []
+                self.day_paths = []
+                self.metrics_var.set("evade running | day=0 success_today=1 success_rate=1.000")
+
+                def on_step(day_idx: int, _step_idx: int, env: EvadeEnv, walk: list[tuple[int, int]]) -> None:
+                    day_path = [(float(x), float(y)) for x, y in walk]
+                    if self.day_paths and self.day_paths[-1][0] == day_idx:
+                        self.day_paths[-1] = (day_idx, day_path)
+                    else:
+                        self.day_paths.append((day_idx, day_path))
+                    self.draw_trajectories(
+                        cfg.visible_cells,
+                        env.base_env.points,
+                        grass_cells=env.grass_cells,
+                        superhacker_pos=env.superhacker_pos,
+                    )
+                    self.root.update_idletasks()
+                    self.root.update()
+
+                def on_day_end(metrics: dict[str, float]) -> None:
+                    day = int(metrics.get("day_idx", 0.0))
+                    success_today = int(metrics.get("success_today", 0.0))
+                    success_rate = metrics.get("success_rate_total", 0.0)
+                    self.history.append(metrics)
+                    self.metrics_var.set(
+                        f"evade | day={day} | success_today={success_today} | success_rate={success_rate:.3f}"
+                    )
+                    self.root.update_idletasks()
+                    self.root.update()
+
+                evade_runner = getattr(evade_train_module, "run_with_callbacks", None)
+                evade_args = argparse.Namespace(
+                        seed=42,
+                        days=cfg.days,
+                        steps_per_day=cfg.steps_per_day,
+                        grass_area=cfg.grass_area,
+                        grass_count=cfg.grass_count,
+                        epsilon=0.08,
+                        motion_checkpoint_path=cfg.motion_checkpoint_path,
+                        dashboard_path="artifacts/evade_dashboard.html",
+                        metrics_csv_path="artifacts/evade_metrics.csv",
+                    )
+                if callable(evade_runner):
+                    evade_runner(
+                        evade_args,
+                        on_step=on_step,
+                        on_day_end=on_day_end,
+                    )
+                else:
+                    # 兼容旧版本 evade_train（仅提供 run），避免 UI 导入阶段直接失败。
+                    evade_train_module.run(evade_args)
+
+                if self.history:
+                    self.draw_trust_graph()
                 return
 
             set_seed(42)
