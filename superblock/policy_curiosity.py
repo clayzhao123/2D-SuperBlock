@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import random
-from dataclasses import dataclass
+from collections import deque
+from dataclasses import dataclass, field
 
 from .env import Action, MOVE_DELTAS, SuperblockEnv, TURN_DIRS
 from .models import ForwardModel
@@ -57,6 +58,8 @@ class CuriosityPolicy:
     memory: CuriosityMemory
     epsilon: float = 0.05
     invalid_penalty: float = 1e6
+    loop_penalty: float = 0.35
+    recent_path: deque[tuple[int, int]] = field(default_factory=lambda: deque(maxlen=10))
 
     def candidate_actions(self) -> list[Action]:
         return [Action(leg_id, move_dir, turn_dir) for leg_id in range(4) for move_dir in MOVE_DELTAS for turn_dir in TURN_DIRS]
@@ -75,6 +78,9 @@ class CuriosityPolicy:
         if rng.random() < self.epsilon:
             return rng.choice(actions)
 
+        if not self.recent_path:
+            self.recent_path.append(state_to_center_cell(state_t))
+
         best_score = float("-inf")
         best_actions: list[Action] = []
         for action in actions:
@@ -82,10 +88,14 @@ class CuriosityPolicy:
             pred_center = state_to_center_cell(pred_state)
             novelty = 1.0 / (1.0 + self.memory.count(pred_center))
             invalid = self._is_invalid(env, action)
-            score = novelty - (self.invalid_penalty if invalid else 0.0)
+            loop_hit = pred_center in self.recent_path
+            score = novelty - (self.invalid_penalty if invalid else 0.0) - (self.loop_penalty if loop_hit else 0.0)
             if score > best_score + 1e-12:
                 best_score = score
                 best_actions = [action]
             elif abs(score - best_score) <= 1e-12:
                 best_actions.append(action)
-        return rng.choice(best_actions or actions)
+        chosen = rng.choice(best_actions or actions)
+        next_points, _ = env.peek_step(env.points, chosen)
+        self.recent_path.append(position_key(next_points))
+        return chosen

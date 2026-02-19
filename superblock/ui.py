@@ -34,8 +34,8 @@ class UIConfig:
 
 def parse_init_points(spec: str) -> list[tuple[int, int]]:
     pts = parse_visible_cells(spec)
-    if len(pts) != 4:
-        raise ValueError("superblock 初始位置必须包含 4 个点，格式如 2:2,3:2,3:3,2:3")
+    if len(pts) != 1:
+        raise ValueError("superblock 初始位置必须包含 1 个点，格式如 2:2")
     return pts
 
 
@@ -129,7 +129,7 @@ def run_ui() -> None:
 
             self.visible_cells_var = tk.StringVar(value="19:19")
             self.superblock_count_var = tk.StringVar(value="1")
-            self.init_points_var = tk.StringVar(value="2:2,3:2,3:3,2:3")
+            self.init_points_var = tk.StringVar(value="2:2")
             self.days_var = tk.StringVar(value="100")
             self.steps_var = tk.StringVar(value="100")
             self.mode_var = tk.StringVar(value="motion")
@@ -149,7 +149,7 @@ def run_ui() -> None:
             self._styled_entry(panel, self.visible_cells_var, 2)
             self._pixel_label(panel, "superblock数量(v1.3预留)", 3, 0)
             self._styled_entry(panel, self.superblock_count_var, 3)
-            self._pixel_label(panel, "superblock初始位置(4点)", 4, 0)
+            self._pixel_label(panel, "superblock初始位置(1点)", 4, 0)
             self._styled_entry(panel, self.init_points_var, 4)
             self._pixel_label(panel, "训练天数", 5, 0)
             self._styled_entry(panel, self.days_var, 5)
