@@ -3,12 +3,13 @@ from __future__ import annotations
 import argparse
 import csv
 import random
+from collections.abc import Callable
 from pathlib import Path
 
 from .env import Action
 from .evade_env import EvadeEnv
 from .master_dashboard import write_master_dashboard
-from .monitor import _line_svg
+from .monitor import _line_svg, load_checkpoint
 from .policy_curiosity import CuriosityPolicy, CuriosityMemory, load_forward_model_from_ckpt
 from .utils import position_key
 
@@ -42,10 +43,86 @@ def _is_loop(path: list[tuple[int, int]], current: tuple[int, int]) -> bool:
     return len(path) >= 6 and current in path[-6:]
 
 
-def run(args: argparse.Namespace) -> None:
+def _resolve_motion_checkpoint_path(path: str) -> str:
+    payload = load_checkpoint(path)
+    if "model" in payload:
+        return path
+
+    motion_path = payload.get("motion_checkpoint_path")
+    if not isinstance(motion_path, str) or not motion_path:
+        raise ValueError(f"checkpoint {path} 不包含 model，且没有 motion_checkpoint_path")
+
+    candidate = Path(path).parent / motion_path
+    if candidate.exists():
+        return str(candidate)
+    return motion_path
+
+
+def _can_see_superhacker(prey: tuple[int, int], hacker: tuple[int, int], vision_length: int) -> bool:
+    if prey[0] == hacker[0]:
+        return abs(prey[1] - hacker[1]) <= vision_length
+    if prey[1] == hacker[1]:
+        return abs(prey[0] - hacker[0]) <= vision_length
+    return False
+
+
+def _observe_grass(
+    anchor: tuple[int, int],
+    grass_cells: set[tuple[int, int]],
+    vision_length: int,
+    memory: set[tuple[int, int]],
+) -> None:
+    ax, ay = anchor
+    for gx, gy in grass_cells:
+        if abs(gx - ax) + abs(gy - ay) <= vision_length:
+            memory.add((gx, gy))
+
+
+def _choose_grass_escape_action(
+    *,
+    state: list[int],
+    env: EvadeEnv,
+    policy: CuriosityPolicy,
+    memory_grass: set[tuple[int, int]],
+    rng: random.Random,
+) -> Action | None:
+    anchor = position_key(state)
+    _observe_grass(anchor, env.grass_cells, env.vision_length, memory_grass)
+
+    visible_grass = [
+        cell for cell in memory_grass if abs(cell[0] - anchor[0]) + abs(cell[1] - anchor[1]) <= env.vision_length
+    ]
+    target = min(visible_grass or list(memory_grass), key=lambda c: abs(c[0] - anchor[0]) + abs(c[1] - anchor[1]), default=None)
+    if target is None:
+        return None
+
+    candidates = []
+    for action in policy.candidate_actions():
+        next_points, invalid = env.base_env.peek_step(env.base_env.points, action)
+        if invalid:
+            continue
+        pred_anchor = position_key(next_points)
+        dist = abs(pred_anchor[0] - target[0]) + abs(pred_anchor[1] - target[1])
+        candidates.append((dist, action))
+
+    if not candidates:
+        return None
+
+    best_dist = min(dist for dist, _ in candidates)
+    best_actions = [action for dist, action in candidates if dist == best_dist]
+    return rng.choice(best_actions)
+
+
+def run_with_callbacks(
+    args: argparse.Namespace,
+    *,
+    on_step: Callable[[int, int, EvadeEnv, list[tuple[int, int]]], None] | None = None,
+    on_day_end: Callable[[dict[str, float]], None] | None = None,
+) -> None:
     rng = random.Random(args.seed)
     env = EvadeEnv(seed=args.seed, grass_area=args.grass_area, grass_count=args.grass_count, vision_length=3)
-    model = load_forward_model_from_ckpt(args.motion_checkpoint_path)
+    motion_ckpt_path = _resolve_motion_checkpoint_path(args.motion_checkpoint_path)
+    model = load_forward_model_from_ckpt(motion_ckpt_path)
     policy = CuriosityPolicy(forward_model=model, memory=CuriosityMemory(), epsilon=args.epsilon)
     history: list[dict[str, float]] = []
     success_total = 0
@@ -56,9 +133,17 @@ def run(args: argparse.Namespace) -> None:
         policy.recent_path.clear()
         policy.memory.update(state)
         survived = 1
+        grass_memory: set[tuple[int, int]] = set()
         walk: list[tuple[int, int]] = [position_key(state)]
-        for _ in range(args.steps_per_day):
-            action = policy.select_action(state, env.base_env, rng)
+        for step_idx in range(args.steps_per_day):
+            anchor = position_key(state)
+            hacker_seen = _can_see_superhacker(anchor, env.superhacker_pos, env.vision_length)
+            action = None
+            if hacker_seen:
+                action = _choose_grass_escape_action(state=state, env=env, policy=policy, memory_grass=grass_memory, rng=rng)
+            if action is None:
+                action = policy.select_action(state, env.base_env, rng)
+
             next_points, will_invalid = env.base_env.peek_step(env.base_env.points, action)
             if _is_loop(walk, position_key(next_points)) or will_invalid:
                 action = env.base_env.sample_action(rng)
@@ -66,6 +151,9 @@ def run(args: argparse.Namespace) -> None:
             pos = position_key(state)
             walk.append(pos)
             policy.memory.update(state)
+            _observe_grass(pos, env.grass_cells, env.vision_length, grass_memory)
+            if on_step is not None:
+                on_step(day_idx, step_idx, env, walk)
             if done:
                 survived = 0
                 break
@@ -81,6 +169,12 @@ def run(args: argparse.Namespace) -> None:
         write_evade_dashboard(args.dashboard_path, history)
         write_evade_csv(args.metrics_csv_path, history)
         write_master_dashboard(evade_metrics_csv_path=args.metrics_csv_path, evade_dashboard_path=args.dashboard_path)
+        if on_day_end is not None:
+            on_day_end(history[-1])
+
+
+def run(args: argparse.Namespace) -> None:
+    run_with_callbacks(args)
 
 
 def build_parser() -> argparse.ArgumentParser:
