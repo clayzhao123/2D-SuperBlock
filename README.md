@@ -172,6 +172,7 @@ python -m superblock.ui
 
 - `mode=motion`：运行原有运动训练，并输出 `artifacts/ui_dashboard.html`。
 - `mode=forage`：从 `motion_checkpoint_path` 加载已有运动权重，运行觅食训练。
+- `mode=evade`：从 `motion_checkpoint_path` 加载已有运动权重，运行躲避训练（含草丛/天敌可视化）。
 
 触发 `mode=forage` 时会输出：
 
