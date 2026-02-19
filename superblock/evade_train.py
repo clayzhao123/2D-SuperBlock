@@ -9,7 +9,7 @@ from pathlib import Path
 from .env import Action
 from .evade_env import EvadeEnv
 from .master_dashboard import write_master_dashboard
-from .monitor import _line_svg
+from .monitor import _line_svg, load_checkpoint
 from .policy_curiosity import CuriosityPolicy, CuriosityMemory, load_forward_model_from_ckpt
 from .utils import position_key
 
@@ -51,7 +51,8 @@ def run_with_callbacks(
 ) -> None:
     rng = random.Random(args.seed)
     env = EvadeEnv(seed=args.seed, grass_area=args.grass_area, grass_count=args.grass_count, vision_length=3)
-    model = load_forward_model_from_ckpt(args.motion_checkpoint_path)
+    motion_ckpt_path = _resolve_motion_checkpoint_path(args.motion_checkpoint_path)
+    model = load_forward_model_from_ckpt(motion_ckpt_path)
     policy = CuriosityPolicy(forward_model=model, memory=CuriosityMemory(), epsilon=args.epsilon)
     history: list[dict[str, float]] = []
     success_total = 0
@@ -62,6 +63,7 @@ def run_with_callbacks(
         policy.recent_path.clear()
         policy.memory.update(state)
         survived = 1
+        grass_memory: set[tuple[int, int]] = set()
         walk: list[tuple[int, int]] = [position_key(state)]
         for step_idx in range(args.steps_per_day):
             action = policy.select_action(state, env.base_env, rng)
