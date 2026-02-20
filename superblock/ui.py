@@ -486,7 +486,9 @@ def run_ui() -> None:
             if cfg.mode == "evade":
                 self.history = []
                 self.day_paths = []
-                self.metrics_var.set("evade running | day=0 success_today=1 success_rate=1.000")
+                self.metrics_var.set(
+                    "evade+forage running | day=0 survive_rate=1.000 hungry_rate=0.000 death_hacker=0 death_hunger=0"
+                )
 
                 def on_step(day_idx: int, _step_idx: int, env: EvadeEnv, walk: list[tuple[int, int]]) -> None:
                     day_path = [(float(x), float(y)) for x, y in walk]
@@ -497,6 +499,7 @@ def run_ui() -> None:
                     self.draw_trajectories(
                         cfg.visible_cells,
                         env.base_env.points,
+                        food_cells=env.food_cells,
                         grass_cells=env.grass_cells,
                         superhacker_pos=env.superhacker_pos,
                     )
@@ -507,9 +510,13 @@ def run_ui() -> None:
                     day = int(metrics.get("day_idx", 0.0))
                     success_today = int(metrics.get("success_today", 0.0))
                     success_rate = metrics.get("success_rate_total", 0.0)
+                    hungry_rate = metrics.get("hungry_success_rate_total", 0.0)
+                    death_hacker = int(metrics.get("death_by_hacker_total", 0.0))
+                    death_hunger = int(metrics.get("death_by_hunger_total", 0.0))
                     self.history.append(metrics)
                     self.metrics_var.set(
-                        f"evade | day={day} | success_today={success_today} | success_rate={success_rate:.3f}"
+                        f"evade+forage | day={day} | survive_today={success_today} | survive_rate={success_rate:.3f} "
+                        f"| hungry_rate={hungry_rate:.3f} | death_hacker={death_hacker} | death_hunger={death_hunger}"
                     )
                     self.root.update_idletasks()
                     self.root.update()
@@ -521,6 +528,13 @@ def run_ui() -> None:
                         steps_per_day=cfg.steps_per_day,
                         grass_area=cfg.grass_area,
                         grass_count=cfg.grass_count,
+                        food_count=cfg.food_count,
+                        hunger_interval=cfg.hunger_interval,
+                        hunger_death_steps=cfg.hunger_death_steps,
+                        vision_radius=cfg.vision_radius,
+                        food_spawn_mode=cfg.food_spawn_mode,
+                        food_spawn_radius=cfg.food_spawn_radius,
+                        max_food_on_map=cfg.max_food_on_map,
                         epsilon=0.08,
                         motion_checkpoint_path=cfg.motion_checkpoint_path,
                         dashboard_path="artifacts/evade_dashboard.html",
@@ -594,15 +608,15 @@ def run_ui() -> None:
                 self.root.update()
 
                 save_checkpoint(
-                    "artifacts/ui_train.ckpt",
+                    "artifacts/motion_train.ckpt",
                     day_idx=day_idx,
                     model=model,
                     buffer=buffer,
                     history=self.history,
                     visible_cells=cfg.visible_cells,
                 )
-                write_dashboard("artifacts/ui_dashboard.html", self.history, cfg.visible_cells)
-                write_history_csv("artifacts/ui_metrics.csv", self.history)
+                write_dashboard("artifacts/motion_dashboard.html", self.history, cfg.visible_cells)
+                write_history_csv("artifacts/motion_metrics.csv", self.history)
 
     root = tk.Tk()
     App(root)

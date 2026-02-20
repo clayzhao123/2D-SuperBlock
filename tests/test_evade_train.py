@@ -54,6 +54,10 @@ def test_evade_train_callbacks_and_outputs(tmp_path: Path) -> None:
     assert len(day_rows) == 2
     assert metrics_path.exists()
     assert dashboard_path.exists()
+    assert "hungry_attempts_total" in day_rows[-1]
+    assert "hungry_success_rate_total" in day_rows[-1]
+    assert "death_by_hacker_total" in day_rows[-1]
+    assert "death_by_hunger_total" in day_rows[-1]
 
 
 def test_resolve_motion_checkpoint_path_from_forage_ckpt(tmp_path: Path) -> None:
@@ -95,3 +99,45 @@ def test_choose_grass_escape_action_prefers_closer_grass() -> None:
     next_points, invalid = env.base_env.peek_step(env.base_env.points, action)
     assert invalid is False
     assert abs(next_points[0][0] - 10) + abs(next_points[0][1] - 9) <= 1
+
+
+def test_evade_train_can_end_by_hunger(tmp_path: Path) -> None:
+    ckpt = tmp_path / "train.ckpt"
+    save_checkpoint(
+        str(ckpt),
+        day_idx=1,
+        model=ForwardModel(),
+        buffer=ReplayBuffer(),
+        history=[],
+        visible_cells=[(19, 19)],
+    )
+
+    day_rows: list[dict[str, float]] = []
+
+    run_with_callbacks(
+        Namespace(
+            seed=42,
+            days=1,
+            steps_per_day=5,
+            grass_area=1,
+            grass_count=0,
+            food_count=0,
+            hunger_interval=1,
+            hunger_death_steps=1,
+            vision_radius=3,
+            food_spawn_mode="static",
+            food_spawn_radius=8,
+            max_food_on_map=6,
+            epsilon=0.0,
+            motion_checkpoint_path=str(ckpt),
+            dashboard_path=str(tmp_path / "evade_dashboard.html"),
+            metrics_csv_path=str(tmp_path / "evade_metrics.csv"),
+        ),
+        on_day_end=day_rows.append,
+    )
+
+    assert len(day_rows) == 1
+    row = day_rows[0]
+    assert row["success_today"] == 0.0
+    assert row["death_by_hunger_today"] == 1.0
+    assert row["death_by_hacker_today"] == 0.0

@@ -46,19 +46,21 @@ class ForwardModel:
             y_pred = [sum(w * hi for w, hi in zip(w_row, h)) + b for w_row, b in zip(self.w2, self.b2)]
 
             dy = [2.0 * (yp - yt) / len(y_true) for yp, yt in zip(y_pred, y_true)]
+            target_dim = len(dy)
 
-            for o in range(len(self.w2)):
+            for o in range(target_dim):
                 for j in range(len(self.w2[o])):
                     grad_w2[o][j] += dy[o] * h[j]
                 grad_b2[o] += dy[o]
 
             dh = [0.0 for _ in h]
             for j in range(len(h)):
-                dh[j] = sum(self.w2[o][j] * dy[o] for o in range(len(self.w2)))
+                dh[j] = sum(self.w2[o][j] * dy[o] for o in range(target_dim))
 
             dz1 = [dh_j * _relu_grad(z) for dh_j, z in zip(dh, z1)]
             for j in range(len(self.w1)):
-                for i in range(len(self.w1[j])):
+                input_dim = min(len(self.w1[j]), len(x))
+                for i in range(input_dim):
                     grad_w1[j][i] += dz1[j] * x[i]
                 grad_b1[j] += dz1[j]
 

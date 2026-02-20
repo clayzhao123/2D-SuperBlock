@@ -1,106 +1,51 @@
-# Superblock v1.3
+﻿# Superblock (Pure Python RL Sandbox)
 
-纯 Python（无新增第三方依赖）的 `Superblock` 训练与行为实验项目。
+`Superblock` 是一个纯 Python 的强化学习实验项目（不依赖 PyTorch/TensorFlow，当前实现也不依赖 `numpy`）。
 
-当前包含三条**独立**能力链路：
+当前包含 4 层能力：
 
-1. **运动能力训练（ForwardModel）**：学习 `state_t + action -> state_{t+1}`。
-2. **觅食能力训练（Foraging）**：在饥饿约束下，用“好奇心探索 + 食物记忆导航”提高觅食成功率。
-3. **躲避能力训练（Evade）**：在天敌追捕规则下学习提高生存成功率。
-
----
-
-## 功能总览
-
-- 40x40 网格中的 `Superblock` 单格体运动（平移 + 方向标签）
-- 前向运动模型 `ForwardModel`（纯 Python MLP）
-- 白天采样 / 夜间训练流程（运动训练）
-- Dashboard + Checkpoint + CSV 指标落盘
-- **Curiosity 探索策略**（使用已训练 ForwardModel 预测下一步）
-- 抗兜圈机制：对最近轨迹回访施加惩罚，降低短周期循环
-- **Foraging 环境**（食物、饥饿触发、死亡窗口、成功率统计）
-- **Evade 环境**（superhacker 巡航/追捕/丢失搜索 + 草丛隐蔽）
-- `pytest` 覆盖核心环境与渲染规则，以及觅食规则
+1. `motion`: Forward Model（`state + action -> next_state`）
+2. `forage`: 觅食策略（含饥饿机制）
+3. `evade`: 躲避 superhacker（含草丛掩护）
+4. `survival`: 高层元策略 RL（食物与威胁同时存在）
 
 ---
 
-## 安装
+## 1. 环境与安装
+
+- Python: `>=3.10`
+- 推荐使用虚拟环境
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+py -3 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -U pip
+python -m pip install -r requirements.txt
+python -m pip install "[dev]"
+```
+
+如果你只想安装测试工具：
+
+```bash
+python -m pip install pytest
 ```
 
 ---
 
-## 1) 运动能力训练（原有主训练）
+## 2. 训练入口
 
-运行：
+### 2.1 Motion
 
 ```bash
 python -m superblock.train
 ```
 
-默认产物：
+默认输出：
 
-- `artifacts/train.ckpt`：模型权重 + buffer + history + visible_cells
-- `artifacts/dashboard.html`：训练监控（score/MSE）
+- `artifacts/train.ckpt`
+- `artifacts/dashboard.html`
 
-常用参数：
-
-```bash
-python -m superblock.train --help
-```
-
-断点恢复：
-
-```bash
-python -m superblock.train --resume --max-days 300
-```
-
-修改可视单元格继续训练：
-
-```bash
-python -m superblock.train \
-  --resume \
-  --override-visible-cells \
-  --visible-cells 19:19,20:19,21:19
-```
-
-仅白天采样（不更新模型）：
-
-```bash
-python -m superblock.train \
-  --resume \
-  --daytime-only
-```
-
----
-
-## 2) 好奇心探索（利用已训练运动模型，不重新训练）
-
-运行：
-
-```bash
-python -m superblock.explore \
-  --checkpoint-path artifacts/train.ckpt \
-  --steps 500 \
-  --seed 42
-```
-
-说明：
-
-- 从 `train.ckpt` 中只加载 `ForwardModel` 权重；
-- 基于访问记忆（中心格访问计数）计算新颖度；
-- 在 8 个候选动作中选最高分动作（含 invalid 惩罚 + epsilon 探索）；
-- 输出覆盖率，并写 `artifacts/curiosity_report.txt`。
-
----
-
-## 3) 觅食训练（独立入口，不与 train.py 混写）
-
-运行：
+### 2.2 Forage
 
 ```bash
 python -m superblock.forage_train \
@@ -113,32 +58,13 @@ python -m superblock.forage_train \
   --motion-checkpoint-path artifacts/train.ckpt
 ```
 
-默认产物：
+默认输出：
 
 - `artifacts/forage.ckpt`
 - `artifacts/forage_metrics.csv`
 - `artifacts/forage_dashboard.html`
-- （可选）`--out-attempts-csv` 输出按次尝试明细
 
-默认行为（重点）：
-
-- `forage_train` **默认不再继续训练 motion model**（`--motion-epochs-per-day` 默认 `0`）。
-- 因此默认 dashboard/CSV 聚焦觅食指标：成功率、hungry→eat 耗时、死亡与“首次看到食物”时刻。
-- 若需在觅食过程中继续校准 motion，请显式传入例如 `--motion-epochs-per-day 10`。
-
-规则摘要：
-
-- 每 `hunger_interval` 步触发一次饥饿（计为一次觅食尝试）。
-- 进入饥饿后，若 `hunger_death_steps` 内未成功吃到食物则死亡，当天提前结束。
-- 吃到食物后计一次成功并重置饥饿状态。
-- 非饥饿时以 Curiosity 探索；饥饿且已有食物记忆时朝最近记忆食物导航。
-
-
----
-
-## 4) 躲避训练（天敌 superhacker）
-
-运行：
+### 2.3 Evade
 
 ```bash
 python -m superblock.evade_train \
@@ -146,74 +72,117 @@ python -m superblock.evade_train \
   --steps-per-day 100 \
   --grass-area 10 \
   --grass-count 3 \
+  --food-count 3 \
+  --hunger-interval 25 \
+  --hunger-death-steps 75 \
+  --vision-radius 3 \
   --motion-checkpoint-path artifacts/train.ckpt
 ```
 
-规则摘要：
-
-- `superhacker` 体积 1 格，四方向视野，视距 3。
-- 发现 `superblock` 后进入追捕；目标脱离视野后在最后丢失点执行环绕搜索；搜索失败后回到巡航轨道。
-- 草丛随机形状生成（面积与数量可配），`superblock` 进入草丛时不会被发现。
-- 每天默认 100 步；若被天敌触碰（同格）则当天失败，否则成功。
-
-默认产物：
+默认输出：
 
 - `artifacts/evade_metrics.csv`
 - `artifacts/evade_dashboard.html`
-- `artifacts/master_dashboard.html`（同步显示 evade 成功率曲线）
 
-## 5) 交互 UI（运动训练 + 觅食训练入口）
+### 2.4 Survival
+
+```bash
+python -m superblock.survival_train
+```
+
+默认输出：
+
+- `artifacts/survival_meta.ckpt`
+- `artifacts/survival_metrics.csv`
+- `artifacts/survival_compare.csv`
+- `artifacts/survival_dashboard.html`
+- `artifacts/survival_runs/<run_id>/run.json`
+
+---
+
+## 3. UI 入口
+
+### 3.1 旧 UI（motion/forage/evade）
 
 ```bash
 python -m superblock.ui
 ```
 
-说明：
-
-- `mode=motion`：运行原有运动训练，并输出 `artifacts/ui_dashboard.html`。
-- `mode=forage`：从 `motion_checkpoint_path` 加载已有运动权重，运行觅食训练。
-- `mode=evade`：从 `motion_checkpoint_path` 加载已有运动权重，运行躲避训练（含草丛/天敌可视化）。
-
-触发 `mode=forage` 时会输出：
-
-- `artifacts/forage_dashboard.html`：默认显示觅食核心指标（成功率、latency、死亡等）；仅当显式启用 motion 日训练时才显示 motion 曲线。
-- `artifacts/train_forage_tuned.ckpt`：运动权重输出（即使不做 motion 日训练也会保留同一路径）。
-
----
-
-## 测试
+### 3.2 Survival UI
 
 ```bash
-pytest -q
+python -m superblock.survival_ui
 ```
+
+Survival UI 主要能力：
+
+- 参数可视化编辑
+- 训练曲线实时更新
+- 环境网格实时渲染
+- 草丛渲染颜色已调整为浅灰色，便于区分食物/威胁
 
 ---
 
-## 项目结构
+## 4. Survival 参数优化（新）
 
-> 注：`evade_train.py` / `evade_env.py` 为新增躲避训练主链路。
+### 4.1 UI 交互
 
-```text
-superblock/
-  __init__.py
-  env.py
-  render.py
-  buffer.py
-  models.py
-  monitor.py
-  train.py
-  ui.py
-  policy_curiosity.py
-  explore.py
-  forage_env.py
-  forage_agent.py
-  forage_train.py
-  evade_env.py
-  evade_train.py
-  utils.py
-tests/
-  test_env.py
-  test_render.py
-  test_forage_env.py
-  test_evade_env.py
+在 `superblock.survival_ui` 中：
+
+- `optimization_direction`: 选择优化方向
+- `optimization_runs`: 设置本次方向要跑的训练次数 `n`
+- `resume_unfinished_only`: 仅恢复当前方向尚未完成的 run
+- 右侧中部显示 `ETA`
+- `STOP FOR NOW`: 请求安全中止；已完成 run 会完整保留并进入 dashboard
+
+### 4.2 内置优化方向（5 条）
+
+1. `meta_lr_stability`
+2. `low_level_unfreeze_balance`
+3. `predator_pressure_robustness`
+4. `resource_hunger_balance`
+5. `perception_capacity_tradeoff`
+
+### 4.3 Dashboard 分层结构
+
+默认优化 dashboard：
+
+- `artifacts/survival_optimization_dashboard.html`
+
+默认优化状态文件：
+
+- `artifacts/survival_optimization_status.json`
+
+页面结构：
+
+1. **Live Optimization Monitor**：当前批次进度、run 状态、参数表
+2. **Direction Overview**：每个优化方向的总体效果（含多条 meta survival curve）
+3. **Direction Subtables**：方向下每次训练结果（迭代参数高亮）
+4. **Run Details**：单次训练详情（曲线、比较、参数）
+
+归档 run 会写入优化元信息：
+
+- `optimization.direction`
+- `optimization.run_index` / `optimization.total_runs`
+- `optimization.iterated_params`
+- `optimization.iterated_values`
+
+---
+
+## 5. 回归测试
+
+运行全量测试：
+
+```bash
+py -3 -m pytest -q
 ```
+
+当前仓库测试基线（本次迭代后）：
+
+- `47 passed`
+
+---
+
+## 6. 架构图
+
+![Superblock Architecture](artifacts/project_architecture.svg)
