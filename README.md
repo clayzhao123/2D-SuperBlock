@@ -1,188 +1,99 @@
-﻿# Superblock (Pure Python RL Sandbox)
+# SuperBlock
 
-`Superblock` 是一个纯 Python 的强化学习实验项目（不依赖 PyTorch/TensorFlow，当前实现也不依赖 `numpy`）。
+纯 Python 的二维网格学习实验台，支持运动预测、觅食与躲避；运行不依赖 NumPy、PyTorch 或 TensorFlow。GUI 使用 Tkinter。
 
-当前包含 4 层能力：
+**当前状态：实验原型。** Survival 元策略、Survival UI 和自动参数优化尚未实现。规则策略与 Q-learning 的能力边界见 [实现状态](docs/status.md)。
 
-1. `motion`: Forward Model（`state + action -> next_state`）
-2. `forage`: 觅食策略（含饥饿机制）
-3. `evade`: 躲避 superhacker（含草丛掩护）
-4. `survival`: 高层元策略 RL（食物与威胁同时存在）
+## 安装
 
----
+需要 Python 3.10 或更新版本。下载/克隆本仓库，进入根目录。
 
-## 1. 环境与安装
+Windows PowerShell：
 
-- Python: `>=3.10`
-- 推荐使用虚拟环境
-
-```bash
+```powershell
 py -3 -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install -U pip
-python -m pip install -r requirements.txt
-python -m pip install "[dev]"
+python -m pip install -e ".[dev]"
 ```
 
-如果你只想安装测试工具：
+macOS / Linux：
 
 ```bash
-python -m pip install pytest
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e ".[dev]"
 ```
 
----
+不需要测试工具时，最后一条换成 `python -m pip install -e .`。原 `python -m pip install -r requirements.txt` 也会安装项目与测试依赖。
 
-## 2. 训练入口
+GUI 若提示缺少 Tkinter，需要安装当前 Python 发行版的 Tk 支持；Ubuntu 系统 Python 通常使用 python3-tk。命令行训练不需要显示器。
 
-### 2.1 Motion
+## 先运行短演示
 
 ```bash
-python -m superblock.train
+python -m superblock.demo
 ```
 
-默认输出：
+演示依次执行少量 motion、qlearn forage、evade 步骤，生成三个独立实验目录。终端打印各目录和总览路径，用浏览器打开 master_dashboard.html 查看结果。
 
-- `artifacts/train.ckpt`
-- `artifacts/dashboard.html`
+这验证执行链路与输出，**不代表模型已经学会觅食或躲避**。
 
-### 2.2 Forage
+## 自己运行实验
+
+先训练运动模型：
 
 ```bash
-python -m superblock.forage_train \
-  --days 100 \
-  --steps-per-day 100 \
-  --food-count 3 \
-  --hunger-interval 25 \
-  --hunger-death-steps 75 \
-  --vision-radius 3 \
-  --motion-checkpoint-path artifacts/train.ckpt
+python -m superblock.experiment motion --run-id motion-baseline -- --max-days 10 --steps-per-day 100 --epochs-per-night 10
 ```
 
-默认输出：
-
-- `artifacts/forage.ckpt`
-- `artifacts/forage_metrics.csv`
-- `artifacts/forage_dashboard.html`
-
-### 2.3 Evade
+用它的 checkpoint 运行 Q-learning 觅食：
 
 ```bash
-python -m superblock.evade_train \
-  --days 100 \
-  --steps-per-day 100 \
-  --grass-area 10 \
-  --grass-count 3 \
-  --food-count 3 \
-  --hunger-interval 25 \
-  --hunger-death-steps 75 \
-  --vision-radius 3 \
-  --motion-checkpoint-path artifacts/train.ckpt
+python -m superblock.experiment forage --run-id forage-baseline -- --motion-checkpoint-path artifacts/runs/motion-baseline/train.ckpt --policy qlearn --days 10
 ```
 
-默认输出：
-
-- `artifacts/evade_metrics.csv`
-- `artifacts/evade_dashboard.html`
-
-### 2.4 Survival
+再运行躲避：
 
 ```bash
-python -m superblock.survival_train
+python -m superblock.experiment evade -- --motion-checkpoint-path artifacts/runs/motion-baseline/train.ckpt --days 10
 ```
 
-默认输出：
+`--` 前是实验目录选项，后是原训练器参数。不填写 --run-id 会自动生成名字；已有同名目录会报错，不覆盖结果。参数、输入文件指纹和运行状态随结果保存。详见 [实验管理](docs/experiments.md)。
 
-- `artifacts/survival_meta.ckpt`
-- `artifacts/survival_metrics.csv`
-- `artifacts/survival_compare.csv`
-- `artifacts/survival_dashboard.html`
-- `artifacts/survival_runs/<run_id>/run.json`
+## 原有入口
 
----
+| 入口 | 用途 |
+|---|---|
+| python -m superblock.train | 运动预测；默认生成 artifacts/train.ckpt |
+| python -m superblock.forage_train | 觅食；依赖运动 checkpoint，默认 heuristic |
+| python -m superblock.evade_train | 躲避 + 觅食；依赖运动 checkpoint |
+| python -m superblock.explore | 探索覆盖度 |
+| python -m superblock.ui | 原有 motion/forage/evade GUI |
+| python -m superblock.demo | 短演示 |
+| python -m superblock.experiment | 独立实验归档 |
 
-## 3. UI 入口
+各训练器完整参数用 --help 查询，例如 `python -m superblock.forage_train --help`。
 
-### 3.1 旧 UI（motion/forage/evade）
+原训练器沿用固定 artifacts 输出路径，日常实验推荐归档入口。motion 续训继续使用原入口的 --resume；归档入口只创建新实验。
+
+## 修改与检查
+
+- [文件导航](docs/architecture.md)：一个需求主要改哪些文件。
+- [实现状态与下一步](docs/status.md)：已实现、占位和计划。
+- [实验与结果管理](docs/experiments.md)：参数、输出、恢复和比较。
 
 ```bash
-python -m superblock.ui
+python -m compileall -q superblock
+python -m pytest -q
+python -m superblock.demo
 ```
 
-### 3.2 Survival UI
+GitHub Actions 在 Python 3.10 / 3.12 上执行检查，并从仓库外运行安装后的 wheel。测试数量以实际结果为准。
 
-```bash
-python -m superblock.survival_ui
-```
+## 使用边界
 
-Survival UI 主要能力：
+当前觅食策略包含规则导航和可读取环境内部状态的基线，不能直接解释为严格有限视野学习。用多个 seed 和明确指标评估效果。
 
-- 参数可视化编辑
-- 训练曲线实时更新
-- 环境网格实时渲染
-- 草丛渲染颜色已调整为浅灰色，便于区分食物/威胁
+Checkpoint 使用 pickle，只加载可信的本项目输出。运行数据位于 artifacts，已被 Git 忽略，需要自行备份。
 
----
-
-## 4. Survival 参数优化（新）
-
-### 4.1 UI 交互
-
-在 `superblock.survival_ui` 中：
-
-- `optimization_direction`: 选择优化方向
-- `optimization_runs`: 设置本次方向要跑的训练次数 `n`
-- `resume_unfinished_only`: 仅恢复当前方向尚未完成的 run
-- 右侧中部显示 `ETA`
-- `STOP FOR NOW`: 请求安全中止；已完成 run 会完整保留并进入 dashboard
-
-### 4.2 内置优化方向（5 条）
-
-1. `meta_lr_stability`
-2. `low_level_unfreeze_balance`
-3. `predator_pressure_robustness`
-4. `resource_hunger_balance`
-5. `perception_capacity_tradeoff`
-
-### 4.3 Dashboard 分层结构
-
-默认优化 dashboard：
-
-- `artifacts/survival_optimization_dashboard.html`
-
-默认优化状态文件：
-
-- `artifacts/survival_optimization_status.json`
-
-页面结构：
-
-1. **Live Optimization Monitor**：当前批次进度、run 状态、参数表
-2. **Direction Overview**：每个优化方向的总体效果（含多条 meta survival curve）
-3. **Direction Subtables**：方向下每次训练结果（迭代参数高亮）
-4. **Run Details**：单次训练详情（曲线、比较、参数）
-
-归档 run 会写入优化元信息：
-
-- `optimization.direction`
-- `optimization.run_index` / `optimization.total_runs`
-- `optimization.iterated_params`
-- `optimization.iterated_values`
-
----
-
-## 5. 回归测试
-
-运行全量测试：
-
-```bash
-py -3 -m pytest -q
-```
-
-当前仓库测试基线（本次迭代后）：
-
-- `47 passed`
-
----
-
-## 6. 架构图
-
-![Superblock Architecture](artifacts/project_architecture.svg)
+许可证：[MIT](LICENSE)。

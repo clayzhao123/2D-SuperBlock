@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import html
 import json
-import os
-import pickle
 from pathlib import Path
 
 from .buffer import ReplayBuffer
 from .models import ForwardModel
+from .checkpoint import load_payload_checkpoint, save_payload_checkpoint
+from .reporting.charts import _line_svg
 
 
 def save_checkpoint(
@@ -32,32 +32,11 @@ def save_checkpoint(
         "history": history,
         "visible_cells": visible_cells,
     }
-    with open(path, "wb") as f:
-        pickle.dump(payload, f)
+    save_payload_checkpoint(path, payload)
 
 
 def load_checkpoint(path: str) -> dict:
-    with open(path, "rb") as f:
-        return pickle.load(f)
-
-
-def _line_svg(values: list[float], *, width: int = 560, height: int = 180, color: str = "#4f46e5") -> str:
-    if not values:
-        return ""
-    lo = min(values)
-    hi = max(values)
-    span = hi - lo if hi != lo else 1.0
-    points = []
-    for idx, value in enumerate(values):
-        x = (idx / max(1, len(values) - 1)) * (width - 10) + 5
-        y = height - (((value - lo) / span) * (height - 20) + 10)
-        points.append(f"{x:.2f},{y:.2f}")
-    return (
-        f'<svg width="{width}" height="{height}" viewBox="0 0 {width} {height}">'
-        f'<rect x="0" y="0" width="{width}" height="{height}" fill="#f8fafc" stroke="#cbd5e1"/>'
-        f'<polyline fill="none" stroke="{color}" stroke-width="2" points="{" ".join(points)}"/>'
-        "</svg>"
-    )
+    return load_payload_checkpoint(path)
 
 
 def write_dashboard(path: str, history: list[dict[str, float]], visible_cells: list[tuple[int, int]]) -> None:
@@ -157,4 +136,4 @@ def write_history_csv(path: str, history: list[dict[str, float]]) -> None:
 
 
 def checkpoint_exists(path: str) -> bool:
-    return os.path.exists(path)
+    return Path(path).is_file()

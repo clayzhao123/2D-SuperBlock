@@ -50,8 +50,8 @@ def test_master_dashboard_renders_sections_and_fallbacks(tmp_path: Path) -> None
     assert "Curiosity" in html
     assert "Forage" in html
     assert "未运行 explore" in html
-    assert "dashboard.html" in html
-    assert "forage_dashboard.html" in html
+    assert "Motion Dashboard（未生成）" in html
+    assert "Forage Dashboard（未生成）" in html
     assert "Evade" in html
 
 

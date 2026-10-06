@@ -3,9 +3,24 @@ from __future__ import annotations
 import csv
 import html
 import json
+import os
 from pathlib import Path
+from urllib.parse import quote
 
 from .monitor import _line_svg, load_checkpoint
+
+
+def _dashboard_link(path: str, label: str, output_path: str) -> str:
+    target = Path(path)
+    title = html.escape(label)
+    if not target.is_file():
+        return f"<span>{title}（未生成）</span>"
+    try:
+        relative = Path(os.path.relpath(target.resolve(), Path(output_path).resolve().parent)).as_posix()
+        href = quote(relative, safe="/")
+    except ValueError:
+        href = target.resolve().as_uri()
+    return f'<a href="{html.escape(href, quote=True)}">{title}</a>'
 
 
 def _load_motion(ckpt_path: str) -> tuple[list[dict[str, float]], list[tuple[int, int]]]:
@@ -137,9 +152,9 @@ def write_master_dashboard(
 <body>
   <h1>Superblock Master Dashboard</h1>
   <div class=\"links\">
-    <a href=\"{motion_dashboard_path}\">Motion Dashboard</a>
-    <a href=\"{forage_dashboard_path}\">Forage Dashboard</a>
-    <a href=\"{evade_dashboard_path}\">Evade Dashboard</a>
+    {_dashboard_link(motion_dashboard_path, "Motion Dashboard", out_path)}
+    {_dashboard_link(forage_dashboard_path, "Forage Dashboard", out_path)}
+    {_dashboard_link(evade_dashboard_path, "Evade Dashboard", out_path)}
   </div>
 
   <div class=\"section\">

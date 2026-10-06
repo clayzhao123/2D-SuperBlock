@@ -1,1 +1,2 @@
-pytest>=7.0
+# Compatibility entry point; pyproject.toml owns dependencies.
+-e .[dev]
