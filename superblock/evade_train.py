@@ -7,11 +7,11 @@ from pathlib import Path
 
 from .env import Action
 from .evade_env import EvadeEnv
-from .forage_agent import FoodMemory, ForagePolicy
+from .agents.heuristic import FoodMemory, ForagePolicy
 from .reporting.summary import write_training_summary
 from .reporting.evade import write_evade_dashboard, write_evade_csv
 from .monitor import load_checkpoint
-from .policy_curiosity import CuriosityMemory, CuriosityPolicy, load_forward_model_from_ckpt
+from .agents.curiosity import CuriosityMemory, CuriosityPolicy, load_forward_model_from_ckpt
 from .utils import position_key
 
 

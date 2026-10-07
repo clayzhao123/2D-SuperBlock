@@ -10,11 +10,11 @@ from .checkpoint import save_payload_checkpoint as save_ckpt
 from .reporting.forage import write_dashboard, write_csv, write_attempts_csv
 from .buffer import ReplayBuffer, Transition
 from .env import Action
-from .forage_agent import FoodMemory, ForagePolicy
+from .agents.heuristic import FoodMemory, ForagePolicy
 from .reporting.summary import write_training_summary
 from .forage_env import ForageEnv
 from .monitor import load_checkpoint, save_checkpoint
-from .policy_curiosity import CuriosityMemory, CuriosityPolicy, load_forward_model_from_ckpt
+from .agents.curiosity import CuriosityMemory, CuriosityPolicy, load_forward_model_from_ckpt
 from .utils import position_key
 from .train import action_to_onehot, train_night
 

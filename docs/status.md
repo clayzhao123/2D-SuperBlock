@@ -4,17 +4,17 @@
 
 | 能力 | 状态 | 边界 |
 |---|---|---|
-| Motion ForwardModel | 已实现 | 纯 Python MLP |
+| Motion ForwardModel | 已实现，需修复维度 | 单格目标 2 维，默认模型输出 8 维，精确准确率存在错误 |
 | Curiosity 探索 | 已实现 | 模型与计数记忆 |
 | Forage heuristic | 已实现 | 规则导航，含内部信息和真实 peek_step |
 | Forage qlearn | 已实现 | 表格 Q-learning，特征可读取环境食物位置 |
 | Forage imitation | 占位 | 回退 heuristic，并明确警告 |
-| Evade + forage | 已实现 | 规则与探索循环，不等于 Survival 元策略 |
+| Evade + forage | 已实现 | 规则与探索循环，不更新独立逃跑策略或 Q 表 |
 | 原有 GUI | 已实现 | 本轮没有改变布局，需要 Tk 和显示环境 |
 | 实验归档 | 已实现 | 参数、seed、输入指纹、代码版本（可得时）、运行状态和输出 |
 | 原子 checkpoint 写入 | 已实现 | 保持旧格式，失败写入不覆盖旧文件 |
 | 自动检查 | 已配置 | Python 3.10/3.12，执行状态见 Actions |
-| Survival 元策略、UI、优化 | 未实现 | main 和核查到的其他 22 个分支均无对应源码 |
+| Survival 元策略、UI、优化 | 未实现 | 2026-10-06 核查 main 及当时其他 22 个分支均无对应源码 |
 
 ## 本轮完成
 
@@ -24,13 +24,21 @@
 - 新增独立实验目录和短演示；总览链接修复，缺失面板显示“未生成”。
 - 对覆盖、失败、中断和写入失败补充回归检查。
 
+## 方法与版本梳理（2026-10-07）
+
+- README 先解释目的、版本变化、两种觅食方法及当前效果，再提供安装与操作步骤。
+- agents/ 并列放置 heuristic.py / qlearn.py，curiosity.py 是共享探索；旧导入入口保留。
+- [版本沿革](history.md) 固定链接原始 V1 与方法引入提交，不将后续阶段冒充正式 V2 发布。
+- [方法说明](methods.md) 区分运动监督学习、手写规则和奖励驱动的 Q 表更新。
+- [运行观察](results.md) 记录 3 个 seed、12 组小规模运行，提供复查脚本；未进行独立评估。
+
 ## 下一轮
 
-1. 明确全知基线与有限视野 observation，隔离完整环境状态。
-2. 固定预算、多 seed 比较 random / heuristic / qlearn 的均值和波动。
-3. 完善随机状态恢复及 forage/evade 续训。
-4. 按真实交互需求拆 GUI。
-5. 单独定义 Survival 的观测、动作、奖励与验收，再实现。
+1. 对齐单格/四顶点状态、模型输入输出与动作编码，修复 exact 指标和模型辅助探索的维度解释。
+2. 明确全知基线与有限视野 observation，隔离完整环境状态。
+3. 增加固定预算、独立评估、多 seed 的 random / heuristic / qlearn 比较。
+4. 完善随机状态恢复及 forage/evade 续训。
+5. 按真实交互需求拆 GUI；单独定义 Survival 的观测、动作、奖励与验收，再实现。
 
 ## 尚不能宣称
 
