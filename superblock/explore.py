@@ -5,7 +5,7 @@ import random
 from pathlib import Path
 
 from .env import SuperblockEnv
-from .policy_curiosity import CuriosityMemory, CuriosityPolicy, load_forward_model_from_ckpt
+from .agents.curiosity import CuriosityMemory, CuriosityPolicy, load_forward_model_from_ckpt
 from .utils import GRID_CELLS
 
 

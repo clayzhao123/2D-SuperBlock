@@ -1,4 +1,4 @@
-"""Superblock V1 prototype package."""
+"""SuperBlock motion, foraging and evade experiment package."""
 
 from .env import SuperblockEnv, Action
 

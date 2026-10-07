@@ -1,22 +1,28 @@
+"""Tabular reward-driven forage route; selected with --policy qlearn."""
+
 from __future__ import annotations
 
 import random
 
 from ..env import Action
-from ..forage_agent import FoodMemory
+from .heuristic import FoodMemory
 from ..forage_env import ForageEnv
 from ..utils import position_key
 
+
 def _min_food_distance(cells: list[tuple[int, int]], food: tuple[int, int]) -> int:
     return min(abs(x - food[0]) + abs(y - food[1]) for x, y in cells)
+
 
 def _nearest_food(cells: list[tuple[int, int]], foods: set[tuple[int, int]]) -> tuple[int, int] | None:
     if not foods:
         return None
     return min(foods, key=lambda cell: _min_food_distance(cells, cell))
 
+
 def _sgn(value: int) -> int:
     return 1 if value > 0 else (-1 if value < 0 else 0)
+
 
 class QLearnForagePolicy:
     def __init__(
