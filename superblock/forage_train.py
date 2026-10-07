@@ -1,40 +1,22 @@
 from __future__ import annotations
 
 import argparse
-import csv
-import pickle
 import random
+import warnings
 from collections.abc import Callable
-from pathlib import Path
 
+from .agents.qlearn import QLearnForagePolicy, _min_food_distance, _nearest_food
+from .checkpoint import save_payload_checkpoint as save_ckpt
+from .reporting.forage import write_dashboard, write_csv, write_attempts_csv
 from .buffer import ReplayBuffer, Transition
 from .env import Action
 from .forage_agent import FoodMemory, ForagePolicy
-from .master_dashboard import write_master_dashboard
+from .reporting.summary import write_training_summary
 from .forage_env import ForageEnv
 from .monitor import load_checkpoint, save_checkpoint
 from .policy_curiosity import CuriosityMemory, CuriosityPolicy, load_forward_model_from_ckpt
 from .utils import position_key
 from .train import action_to_onehot, train_night
-
-
-def _line_svg(values: list[float], *, width: int = 560, height: int = 180, color: str = "#4f46e5") -> str:
-    if not values:
-        return ""
-    lo = min(values)
-    hi = max(values)
-    span = hi - lo if hi != lo else 1.0
-    points = []
-    for idx, value in enumerate(values):
-        x = (idx / max(1, len(values) - 1)) * (width - 10) + 5
-        y = height - (((value - lo) / span) * (height - 20) + 10)
-        points.append(f"{x:.2f},{y:.2f}")
-    return (
-        f'<svg width="{width}" height="{height}" viewBox="0 0 {width} {height}">'
-        f'<rect x="0" y="0" width="{width}" height="{height}" fill="#f8fafc" stroke="#cbd5e1"/>'
-        f'<polyline fill="none" stroke="{color}" stroke-width="2" points="{" ".join(points)}"/>'
-        "</svg>"
-    )
 
 
 def _percentile(values: list[int], q: float) -> float:
@@ -45,183 +27,6 @@ def _percentile(values: list[int], q: float) -> float:
     return float(ordered[idx])
 
 
-def _min_food_distance(cells: list[tuple[int, int]], food: tuple[int, int]) -> int:
-    return min(abs(x - food[0]) + abs(y - food[1]) for x, y in cells)
-
-
-def _nearest_food(cells: list[tuple[int, int]], foods: set[tuple[int, int]]) -> tuple[int, int] | None:
-    if not foods:
-        return None
-    return min(foods, key=lambda cell: _min_food_distance(cells, cell))
-
-
-def _sgn(value: int) -> int:
-    return 1 if value > 0 else (-1 if value < 0 else 0)
-
-
-class QLearnForagePolicy:
-    def __init__(
-        self,
-        *,
-        actions: list[Action],
-        alpha: float,
-        gamma: float,
-        epsilon: float,
-        epsilon_min: float,
-        epsilon_decay: float,
-        cell_div: int,
-    ) -> None:
-        self.actions = actions
-        self.alpha = alpha
-        self.gamma = gamma
-        self.epsilon = epsilon
-        self.epsilon_min = epsilon_min
-        self.epsilon_decay = epsilon_decay
-        self.cell_div = max(1, cell_div)
-        self.q_table: dict[tuple[int, int, int, int, int, int], list[float]] = {}
-
-    def _feature(self, state_t: list[int], env: ForageEnv, food_memory: FoodMemory) -> tuple[int, int, int, int, int, int]:
-        cells = env.occupied_cells(state_t)
-        px, py = position_key(state_t)
-        target = _nearest_food(cells, food_memory.food_cells) or _nearest_food(cells, set(env.food_cells))
-        dx_s, dy_s = 0, 0
-        if target is not None:
-            nearest = min(cells, key=lambda cell: abs(cell[0] - target[0]) + abs(cell[1] - target[1]))
-            dx_s = _sgn(target[0] - nearest[0])
-            dy_s = _sgn(target[1] - nearest[1])
-
-        remaining = max(0, env.hunger_death_steps - env.hungry_steps)
-        remaining_bucket = min(4, remaining // max(1, env.hunger_death_steps // 5 or 1))
-        return (px // self.cell_div, py // self.cell_div, 1 if env.hungry else 0, dx_s, dy_s, remaining_bucket)
-
-    def _ensure_row(self, feat: tuple[int, int, int, int, int, int]) -> list[float]:
-        if feat not in self.q_table:
-            self.q_table[feat] = [0.0 for _ in self.actions]
-        return self.q_table[feat]
-
-    def select_action(self, feat: tuple[int, int, int, int, int, int], rng: random.Random) -> tuple[int, Action]:
-        q_values = self._ensure_row(feat)
-        if rng.random() < self.epsilon:
-            idx = rng.randrange(len(self.actions))
-            return idx, self.actions[idx]
-        best_idx = max(range(len(self.actions)), key=lambda i: q_values[i])
-        return best_idx, self.actions[best_idx]
-
-    def update(
-        self,
-        feat: tuple[int, int, int, int, int, int],
-        action_idx: int,
-        reward: float,
-        next_feat: tuple[int, int, int, int, int, int],
-        done: bool,
-    ) -> None:
-        q_values = self._ensure_row(feat)
-        target = reward
-        if not done:
-            target += self.gamma * max(self._ensure_row(next_feat))
-        q_values[action_idx] += self.alpha * (target - q_values[action_idx])
-
-    def end_day(self) -> None:
-        self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
-
-    def serialize(self) -> dict[str, list[float]]:
-        return {"|".join(str(v) for v in key): values for key, values in self.q_table.items()}
-
-def write_dashboard(path: str, history: list[dict[str, float]], *, show_motion: bool, policy_name: str) -> None:
-    Path(path).parent.mkdir(parents=True, exist_ok=True)
-
-    success_svg = _line_svg([row["hungry_success_rate_total"] for row in history], color="#16a34a")
-    latency_svg = _line_svg([row["hungry_latency_mean_total"] for row in history if row["hungry_latency_mean_total"] >= 0], color="#f59e0b")
-    deaths_svg = _line_svg([row["deaths_total"] for row in history], color="#dc2626")
-    curiosity_svg = _line_svg([row["curiosity_score"] for row in history], color="#7c3aed")
-
-    latest = history[-1] if history else None
-    eval_line = "暂无评估"
-    if latest is not None:
-        eval_line = (
-            f"success_rate_total={latest.get('hungry_success_rate_total', 0.0):.3f}, "
-            f"latency_mean_total={latest.get('hungry_latency_mean_total', -1.0):.2f}, "
-            f"deaths_total={int(latest.get('deaths_total', 0.0))}"
-        )
-
-    motion_block = ""
-    if show_motion:
-        motion_svg = _line_svg([row.get("motion_score", 0.0) for row in history], color="#2563eb")
-        motion_block = f"""
-        <h3>运动模型分数（仅在显式启用 motion 训练时显示）</h3>
-        {motion_svg}
-        """
-
-    rows = "\n".join(
-        "<tr>"
-        f"<td>{int(row['day_idx'])}</td>"
-        f"<td>{row['hungry_success_rate_today']:.3f}</td>"
-        f"<td>{row['hungry_latency_mean_today']:.2f}</td>"
-        f"<td>{int(row['hungry_attempts_today'])}</td>"
-        f"<td>{int(row['hungry_success_today'])}</td>"
-        f"<td>{int(row['food_seen_flag_today'])}</td>"
-        f"<td>{int(row['steps_to_first_food_seen_today'])}</td>"
-        f"<td>{int(row['deaths_total'])}</td>"
-        f"<td>{row['curiosity_score']:.3f}</td>"
-        "</tr>"
-        for row in history[-30:]
-    )
-
-    content = f"""<!doctype html>
-<html lang=\"zh\"><head><meta charset=\"utf-8\"><meta http-equiv=\"refresh\" content=\"3\">
-<title>Forage Dashboard</title></head><body>
-<h1>Forage 训练面板（觅食指标优先）</h1>
-<div><b>policy:</b> {policy_name}</div>
-<div><b>eval:</b> {eval_line}</div>
-<h3>累计觅食成功率（越高越好）</h3>
-{success_svg}
-<h3>累计平均觅食耗时 hungry→eat（越低越好）</h3>
-{latency_svg}
-<h3>累计死亡次数</h3>
-{deaths_svg}
-<h3>好奇心分数（辅助指标）</h3>
-{curiosity_svg}
-{motion_block}
-<table border=\"1\" cellspacing=\"0\" cellpadding=\"4\">
-<tr><th>day</th><th>rate_today</th><th>lat_mean_today</th><th>attempts_today</th><th>success_today</th><th>food_seen</th><th>first_seen_step</th><th>deaths_total</th><th>curiosity</th></tr>
-{rows}
-</table></body></html>"""
-    Path(path).write_text(content, encoding="utf-8")
-
-
-def write_csv(path: str, history: list[dict[str, float]]) -> None:
-    Path(path).parent.mkdir(parents=True, exist_ok=True)
-    if not history:
-        with open(path, "w", encoding="utf-8") as f:
-            f.write("\n")
-        return
-
-    fieldnames = list(history[0].keys())
-    with open(path, "w", encoding="utf-8", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(history)
-
-
-def write_attempts_csv(path: str, attempts: list[dict[str, str]]) -> None:
-    if not path:
-        return
-    Path(path).parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", encoding="utf-8", newline="") as f:
-        writer = csv.DictWriter(
-            f,
-            fieldnames=["day_idx", "attempt_idx", "start_center", "target_food", "success", "latency_steps"],
-        )
-        writer.writeheader()
-        writer.writerows(attempts)
-
-
-def save_ckpt(path: str, payload: dict) -> None:
-    Path(path).parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "wb") as f:
-        pickle.dump(payload, f)
-
-
 def run_with_callbacks(
     args: argparse.Namespace,
     *,
@@ -230,7 +35,7 @@ def run_with_callbacks(
 ) -> None:
     policy_name = getattr(args, "policy", "heuristic")
     if policy_name == "imitation":
-        # 当前版本先占位，默认回退启发式，保持 CLI 兼容且可复现。
+        warnings.warn("imitation is not implemented; using heuristic policy", UserWarning, stacklevel=2)
         policy_name = "heuristic"
 
     q_alpha = getattr(args, "q_alpha", 0.3)
@@ -529,12 +334,7 @@ def run_with_callbacks(
             history=motion_history,
             visible_cells=motion_visible_cells,
         )
-        write_master_dashboard(
-            motion_ckpt_path=args.motion_output_checkpoint,
-            forage_metrics_csv_path=args.out_metrics_csv,
-            forage_ckpt_path=args.out_checkpoint,
-            forage_dashboard_path=args.out_dashboard,
-        )
+        write_training_summary(args, "forage")
         if on_day_end is not None:
             on_day_end(row)
 
@@ -543,7 +343,6 @@ def run_with_callbacks(
             f"rate_today={hungry_success_rate_today:.3f} latency_mean_today={row['hungry_latency_mean_today']:.2f} "
             f"rate_total={hungry_success_rate_total:.3f} deaths={deaths_total}"
         )
-
 
 
 def run(args: argparse.Namespace) -> None:
@@ -586,6 +385,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--out-metrics-csv", type=str, default="artifacts/forage_metrics.csv")
     parser.add_argument("--out-attempts-csv", type=str, default="")
     parser.add_argument("--out-dashboard", type=str, default="artifacts/forage_dashboard.html")
+    parser.add_argument("--master-dashboard-path", default="artifacts/master_dashboard.html")
     return parser
 
 

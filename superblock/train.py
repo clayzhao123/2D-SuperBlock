@@ -5,7 +5,7 @@ import random
 
 from .buffer import ReplayBuffer, Transition
 from .env import Action, SuperblockEnv
-from .master_dashboard import write_master_dashboard
+from .reporting.summary import write_training_summary
 from .models import ForwardModel
 from .monitor import checkpoint_exists, load_checkpoint, save_checkpoint, write_dashboard
 from .utils import GRID_MAX, exp, mse, set_seed
@@ -129,7 +129,7 @@ def run(args: argparse.Namespace) -> None:
                 break
 
     write_dashboard(args.dashboard_path, history, visible_cells)
-    write_master_dashboard(motion_ckpt_path=args.checkpoint_path, motion_dashboard_path=args.dashboard_path)
+    write_training_summary(args, "motion")
 
     try:
         for day_idx in range(start_day + 1, args.max_days + 1):
@@ -186,7 +186,7 @@ def run(args: argparse.Namespace) -> None:
             )
 
             write_dashboard(args.dashboard_path, history, visible_cells)
-            write_master_dashboard(motion_ckpt_path=args.checkpoint_path, motion_dashboard_path=args.dashboard_path)
+            write_training_summary(args, "motion")
             if day_idx % args.save_every_days == 0:
                 save_checkpoint(
                     args.checkpoint_path,
@@ -203,6 +203,8 @@ def run(args: argparse.Namespace) -> None:
                 break
     except KeyboardInterrupt:
         print("Interrupted by user, saving checkpoint...")
+        if getattr(args, "_propagate_interrupt", False):
+            raise
     finally:
         last_day = int(history[-1]["day_idx"]) if history else start_day
         save_checkpoint(
@@ -214,7 +216,7 @@ def run(args: argparse.Namespace) -> None:
             visible_cells=visible_cells,
         )
         write_dashboard(args.dashboard_path, history, visible_cells)
-        write_master_dashboard(motion_ckpt_path=args.checkpoint_path, motion_dashboard_path=args.dashboard_path)
+        write_training_summary(args, "motion")
         print(f"Checkpoint saved to {args.checkpoint_path}")
         print(f"Dashboard updated at {args.dashboard_path}")
 
@@ -249,6 +251,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="When resuming, use --visible-cells instead of checkpoint value.",
     )
+    parser.add_argument("--master-dashboard-path", default="artifacts/master_dashboard.html")
     return parser
 
 
